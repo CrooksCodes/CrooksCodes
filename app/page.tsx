@@ -706,7 +706,7 @@ const projects: Project[] = [
     title: "Truecast",
     desc: "A weather app that doesn't pick favorites. Asks 7 forecast models at once, surfaces the consensus, and shows where they disagree.",
     tags: ["Svelte 5", "TypeScript", "Vite"],
-    href: "https://truecastweather.vercel.app",
+    href: "https://truecast-crookscodes.vercel.app",
   },
   {
     num: "03",
@@ -714,7 +714,7 @@ const projects: Project[] = [
     title: "Streetwear Storefront",
     desc: "An online store for a clothing brand, a properly built alternative to an off-the-shelf Shopify theme. Filterable shop, product pages, and a working cart that remembers what you added.",
     tags: ["Next.js", "TypeScript", "Prisma", "Tailwind"],
-    href: "https://streetwear-demo.vercel.app",
+    href: "https://streetwear-crookscodes.vercel.app",
   },
   {
     num: "04",

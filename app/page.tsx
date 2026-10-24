@@ -1,57 +1,66 @@
 "use client";
 
 import { motion, useScroll, useTransform, useInView, useMotionValue, useSpring, useReducedMotion } from "framer-motion";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 // ── Scramble hook ─────────────────────────────────────────────────────────────
-function useScramble(finalText: string, startDelay = 0, skip = false) {
+// Time-based so it resolves on schedule regardless of frame rate. A hard
+// deadline guarantees the final text lands even if rAF stalls.
+const SCRAMBLE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%&";
+const SCRAMBLE_DURATION = 600;
+
+function useScramble(finalText: string, startDelay = 0, skip = false, duration = SCRAMBLE_DURATION) {
   const [displayed, setDisplayed] = useState("");
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%&";
 
   useEffect(() => {
-    if (skip) {
+    if (skip) return;
+
+    let raf = 0;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    let startedAt = 0;
+
+    const finish = () => {
+      cancelAnimationFrame(raf);
+      if (deadline) clearTimeout(deadline);
       setDisplayed(finalText);
-      return;
-    }
+    };
 
-    let frame = 0;
-    let timeout: ReturnType<typeof setTimeout>;
-    let raf: number;
+    const animate = (now: number) => {
+      if (!startedAt) startedAt = now;
+      const progress = Math.min((now - startedAt) / duration, 1);
+      const revealedCount = Math.floor(progress * finalText.length);
 
-    const start = () => {
-      const totalFrames = finalText.length * 4;
-
-      const animate = () => {
-        frame++;
-        const progress = Math.min(frame / totalFrames, 1);
-        const revealedCount = Math.floor(progress * finalText.length);
-
-        const scrambled = finalText
+      setDisplayed(
+        finalText
           .split("")
           .map((char, i) => {
             if (char === " ") return " ";
             if (i < revealedCount) return char;
-            return chars[Math.floor(Math.random() * chars.length)];
+            return SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)];
           })
-          .join("");
+          .join(""),
+      );
 
-        setDisplayed(scrambled);
-
-        if (progress < 1) {
-          raf = requestAnimationFrame(animate);
-        } else {
-          setDisplayed(finalText);
-        }
-      };
-
-      raf = requestAnimationFrame(animate);
+      if (progress < 1) {
+        raf = requestAnimationFrame(animate);
+      } else {
+        finish();
+      }
     };
 
-    timeout = setTimeout(start, startDelay);
-    return () => { clearTimeout(timeout); cancelAnimationFrame(raf); };
-  }, [finalText, startDelay, skip]);
+    const timeout = setTimeout(() => {
+      raf = requestAnimationFrame(animate);
+      deadline = setTimeout(finish, duration + 100);
+    }, startDelay);
 
-  return displayed;
+    return () => {
+      clearTimeout(timeout);
+      cancelAnimationFrame(raf);
+      if (deadline) clearTimeout(deadline);
+    };
+  }, [finalText, startDelay, skip, duration]);
+
+  return skip ? finalText : displayed;
 }
 
 // ── Scramble word ─────────────────────────────────────────────────────────────
@@ -61,11 +70,9 @@ function ScrambleWord({ word, delay, className }: { word: string; delay: number;
   return (
     <motion.span
       className={className}
-      initial={reduce ? { opacity: 0 } : { opacity: 0, y: 70, skewY: 5 }}
-      animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0, skewY: 0 }}
-      transition={reduce
-        ? { duration: 0.3, delay: Math.min(delay / 1000, 0.3) }
-        : { duration: 0.75, ease: [0.22, 1, 0.36, 1], delay: delay / 1000 }}
+      initial={reduce ? false : { opacity: 0, y: 70, skewY: 5 }}
+      animate={reduce ? undefined : { opacity: 1, y: 0, skewY: 0 }}
+      transition={reduce ? undefined : { duration: 0.75, ease: [0.22, 1, 0.36, 1], delay: delay / 1000 }}
     >
       {displayed || word.toUpperCase()}
     </motion.span>
@@ -73,9 +80,11 @@ function ScrambleWord({ word, delay, className }: { word: string; delay: number;
 }
 
 // ── Cursor ───────────────────────────────────────────────────────────────────
+const subscribeNoop = () => () => {};
+
 function Cursor() {
   const reduce = useReducedMotion();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(subscribeNoop, () => true, () => false);
   const [label, setLabel] = useState("");
   const [showRing, setShowRing] = useState(false);
   const [visible, setVisible] = useState(false);
@@ -84,8 +93,6 @@ function Cursor() {
   const y = useMotionValue(-200);
   const sx = useSpring(x, { stiffness: 520, damping: 42, mass: 0.35 });
   const sy = useSpring(y, { stiffness: 520, damping: 42, mass: 0.35 });
-
-  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     if (!mounted) return;
@@ -361,29 +368,25 @@ function ParallaxNumber({ children }: { children: React.ReactNode }) {
 }
 
 // ── Typed status ─────────────────────────────────────────────────────────────
+const TYPED_LINES = [
+  "Currently building a new web app",
+  "Building sites that grow with your business",
+];
+
 function TypedStatus() {
-  const lines = [
-    "Currently building a new web app",
-    "Building sites that grow with your business",
-  ];
   const reduce = useReducedMotion();
   const [lineIndex, setLineIndex] = useState(0);
   const [displayed, setDisplayed] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const current = TYPED_LINES[lineIndex];
+  const nextLine = () => setLineIndex((i) => (i + 1) % TYPED_LINES.length);
 
   useEffect(() => {
-    const current = lines[lineIndex];
     let timeout: ReturnType<typeof setTimeout>;
 
     if (reduce) {
-      // Skip the typing animation: show the current line fully, then cycle slowly.
-      if (displayed !== current) {
-        setDisplayed(current);
-        return;
-      }
-      timeout = setTimeout(() => {
-        setLineIndex((i) => (i + 1) % lines.length);
-      }, 5000);
+      // Skip the typing animation: the full line is shown below, just cycle slowly.
+      timeout = setTimeout(nextLine, 5000);
       return () => clearTimeout(timeout);
     }
 
@@ -392,14 +395,23 @@ function TypedStatus() {
     } else if (!deleting && displayed.length === current.length) {
       timeout = setTimeout(() => setDeleting(true), 2200);
     } else if (deleting && displayed.length > 0) {
-      timeout = setTimeout(() => setDisplayed(displayed.slice(0, -1)), 22);
+      timeout = setTimeout(() => {
+        const next = displayed.slice(0, -1);
+        setDisplayed(next);
+        if (next.length === 0) {
+          setDeleting(false);
+          nextLine();
+        }
+      }, 22);
     } else if (deleting && displayed.length === 0) {
-      setDeleting(false);
-      setLineIndex((i) => (i + 1) % lines.length);
+      timeout = setTimeout(() => {
+        setDeleting(false);
+        nextLine();
+      }, 0);
     }
 
     return () => clearTimeout(timeout);
-  }, [displayed, deleting, lineIndex, reduce]);
+  }, [displayed, deleting, current, reduce]);
 
   return (
     <motion.div
@@ -408,7 +420,7 @@ function TypedStatus() {
       animate={{ opacity: 1 }}
       transition={{ delay: reduce ? 0 : 1.8 }}
     >
-      <span className="typed-text">{displayed}</span>
+      <span className="typed-text">{reduce ? current : displayed}</span>
       <span className="typed-cursor" aria-hidden="true">|</span>
     </motion.div>
   );
@@ -450,6 +462,7 @@ const techGroups: { title: string; items: Tech[] }[] = [
     items: [
       { label: "TypeScript", slug: "typescript", color: "3178C6" },
       { label: "JavaScript", slug: "javascript", color: "F7DF1E" },
+      { label: "Java", slug: "openjdk", color: "F0EDE4" },
       { label: "SQL", svg: sqlIcon },
       { label: "HTML", slug: "html5", color: "E34F26" },
       { label: "CSS", slug: "css", color: "1572B6" },
@@ -706,16 +719,43 @@ const projects: Project[] = [
   {
     num: "04",
     year: "2026",
-    title: "Deckstack",
-    desc: "Interview-prep flashcards tuned for technical interviews. Spaced repetition, custom decks, and a review loop built for retention.",
-    tags: ["Next.js", "TypeScript", "Prisma", "PostgreSQL"],
+    title: "Proving Ground",
+    desc: "A player development app for youth soccer coaching staff. Evaluations seed development plans, which drive session plans and track progress, shared live across coaches.",
+    tags: ["Next.js", "TypeScript", "Supabase", "Tailwind"],
+  },
+];
+
+// ── Experience data ──────────────────────────────────────────────────────────
+type Experience = {
+  year: string;
+  role: string;
+  company: string;
+  desc?: string;
+};
+
+const experience: Experience[] = [
+  {
+    year: "Jun 2026 to Present",
+    role: "Co-Founder and Web Developer",
+    company: "Dory Digital (Crooks Code)",
+    desc: "Co-run a Halifax web business. I build every client site from scratch, from design to deployment.",
   },
   {
-    num: "05",
-    year: "2026",
-    title: "Looking Glass",
-    desc: "An investment dashboard. See how your money is performing, where it's invested, and how it's trending — all in one place.",
-    tags: ["Next.js", "TypeScript", "Prisma", "PostgreSQL"],
+    year: "May 2026 to Present",
+    role: "Web Developer",
+    company: "One North End",
+    desc: "Maintain the One North End website and build internal tools for their programs and staff.",
+  },
+  {
+    year: "Sep 2026 to Present",
+    role: "Bachelor of Computer Science",
+    company: "Dalhousie University",
+  },
+  {
+    year: "2024 to 2026",
+    role: "Matrix Code",
+    company: "One North End × Dalhousie University",
+    desc: "Full-stack development program combining hands-on project work with university coursework. Graduated 2026.",
   },
 ];
 
@@ -863,11 +903,11 @@ export default function Home() {
                     </div>
                     <div className="about-fact">
                       <dt>Studying</dt>
-                      <dd>Matrix Code — One North End × Dalhousie</dd>
+                      <dd>Bachelor of Computer Science, Dalhousie University</dd>
                     </div>
                     <div className="about-fact">
                       <dt>Currently</dt>
-                      <dd>Building Looking Glass — a privacy-first analytics dashboard</dd>
+                      <dd>Building Proving Ground, a player development app for youth soccer coaches</dd>
                     </div>
                   </dl>
                 </Reveal>
@@ -948,15 +988,8 @@ export default function Home() {
         <section id="experience" className="section">
           <div className="section-inner">
             <Reveal><SectionLabel number="04">Experience</SectionLabel></Reveal>
-            {[
-              {
-                year: "2024 — 2026",
-                company: "One North End × Dalhousie University",
-                role: "Matrix Code",
-                desc: "Full-stack development program combining hands-on project work with university coursework. Graduated 2026.",
-              },
-            ].map((exp, i) => (
-              <Reveal key={exp.company} delay={0.1 + i * 0.08}>
+            {experience.map((exp, i) => (
+              <Reveal key={`${exp.role} ${exp.company}`} delay={0.1 + i * 0.08}>
                 <div className="exp-row">
                   <span className="exp-year">{exp.year}</span>
                   <div className="exp-content">
@@ -964,7 +997,7 @@ export default function Home() {
                       {exp.role}
                       <span className="exp-company"> · {exp.company}</span>
                     </h3>
-                    <p>{exp.desc}</p>
+                    {exp.desc && <p>{exp.desc}</p>}
                   </div>
                 </div>
               </Reveal>
@@ -1061,7 +1094,7 @@ export default function Home() {
   <div className="portfolio-footer-bottom">
     <span>CrooksCodes — Portfolio</span>
     <FooterClock />
-    <span>© 2025</span>
+    <span>© {new Date().getFullYear()}</span>
   </div>
 </footer>
       </main>

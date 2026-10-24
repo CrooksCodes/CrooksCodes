@@ -698,7 +698,7 @@ const projects: Project[] = [
     title: "Table4Two",
     desc: "A shared-decision app for pairs. Ends the \"wherever you want\" standoff. Swipe together, match on a pick, go eat.",
     tags: ["Next.js", "TypeScript", "Supabase", "Tailwind"],
-    href: "https://table4two-demo.vercel.app",
+    href: "https://table4two-crookscodes.vercel.app",
   },
   {
     num: "02",

@@ -14,15 +14,15 @@ const geistMono = Geist_Mono({
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://crookscodes.com";
 const siteName = "CrooksCodes";
-const title = "CrooksCodes — Full-Stack Developer";
+const title = "CrooksCodes · Full-Stack Developer";
 const description =
-  "Full-stack developer building websites and web apps — fast, reliable, and built to grow with you. Based in Halifax, Nova Scotia.";
+  "Full-stack developer building websites and web apps: fast, reliable, and built to grow with you. Based in Halifax, Nova Scotia.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
     default: title,
-    template: "%s — CrooksCodes",
+    template: "%s · CrooksCodes",
   },
   description,
   applicationName: siteName,

@@ -1,6 +1,6 @@
 "use client";
 
-import { motion, useScroll, useTransform, useInView, useMotionValue, useSpring, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion, useScroll, useTransform, useInView, useMotionValue, useSpring, useReducedMotion } from "framer-motion";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 // ── Scramble hook ─────────────────────────────────────────────────────────────
@@ -600,7 +600,7 @@ function ContactForm() {
   if (status === "success") {
     return (
       <div className="contact-form-success" role="status" aria-live="polite">
-        <p className="contact-form-success-line">Thanks — I&apos;ll be in touch.</p>
+        <p className="contact-form-success-line">Thanks, I&apos;ll be in touch.</p>
         <button
           type="button"
           className="contact-form-reset"
@@ -696,7 +696,7 @@ const projects: Project[] = [
     num: "01",
     year: "2026",
     title: "Table4Two",
-    desc: "A shared-decision app for pairs. Ends the \"wherever you want\" standoff — swipe together, match on a pick, go eat.",
+    desc: "A shared-decision app for pairs. Ends the \"wherever you want\" standoff. Swipe together, match on a pick, go eat.",
     tags: ["Next.js", "TypeScript", "Supabase", "Tailwind"],
     href: "https://table4two-demo.vercel.app",
   },
@@ -712,7 +712,7 @@ const projects: Project[] = [
     num: "03",
     year: "2026",
     title: "Streetwear Storefront",
-    desc: "An online store for a clothing brand — a properly built alternative to an off-the-shelf Shopify theme. Filterable shop, product pages, and a working cart that remembers what you added.",
+    desc: "An online store for a clothing brand, a properly built alternative to an off-the-shelf Shopify theme. Filterable shop, product pages, and a working cart that remembers what you added.",
     tags: ["Next.js", "TypeScript", "Prisma", "Tailwind"],
     href: "https://streetwear-demo.vercel.app",
   },
@@ -725,15 +725,15 @@ const projects: Project[] = [
   },
 ];
 
-// ── Experience data ──────────────────────────────────────────────────────────
-type Experience = {
+// ── Experience / Education data ──────────────────────────────────────────────
+type TimelineEntry = {
   year: string;
   role: string;
   company: string;
   desc?: string;
 };
 
-const experience: Experience[] = [
+const experience: TimelineEntry[] = [
   {
     year: "Jun 2026 to Present",
     role: "Co-Founder and Web Developer",
@@ -746,24 +746,54 @@ const experience: Experience[] = [
     company: "One North End",
     desc: "Maintain the One North End website and build internal tools for their programs and staff.",
   },
+];
+
+const education: TimelineEntry[] = [
   {
     year: "Sep 2026 to Present",
     role: "Bachelor of Computer Science",
     company: "Dalhousie University",
+    desc: "Year 1 of 4, expected 2030. Working toward a career in cyber security.",
   },
   {
     year: "2024 to 2026",
     role: "Matrix Code",
     company: "One North End × Dalhousie University",
-    desc: "Full-stack development program combining hands-on project work with university coursework. Graduated 2026.",
+    desc: "Full-stack development program combining hands-on project work with university coursework.",
   },
 ];
 
+// Shared row layout for Experience and Education
+function Timeline({ entries }: { entries: TimelineEntry[] }) {
+  return (
+    <>
+      {entries.map((entry, i) => (
+        <Reveal key={`${entry.role} ${entry.company}`} delay={0.1 + i * 0.08}>
+          <div className="exp-row">
+            <span className="exp-year">{entry.year}</span>
+            <div className="exp-content">
+              <h3>
+                {entry.role}
+                <span className="exp-company"> · {entry.company}</span>
+              </h3>
+              {entry.desc && <p>{entry.desc}</p>}
+            </div>
+          </div>
+        </Reveal>
+      ))}
+    </>
+  );
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
+const NAV_ITEMS = ["about", "skills", "projects", "experience", "education", "contact"];
+
 export default function Home() {
   const reduce = useReducedMotion();
   const [active, setActive] = useState("about");
   const [emailCopied, setEmailCopied] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const navRef = useRef<HTMLElement>(null);
 
   const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
 
@@ -773,8 +803,23 @@ export default function Home() {
     window.setTimeout(() => setEmailCopied(false), 1800);
   };
 
+  // Mobile menu: close on Escape or on a tap outside the header
   useEffect(() => {
-    const sections = ["about", "skills", "projects", "experience", "contact"];
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMenuOpen(false); };
+    const onPointer = (e: PointerEvent) => {
+      if (navRef.current && !navRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPointer);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPointer);
+    };
+  }, [menuOpen]);
+
+  useEffect(() => {
+    const sections = NAV_ITEMS;
     const observer = new IntersectionObserver(
       (entries) => {
         const visible = entries
@@ -798,13 +843,14 @@ export default function Home() {
 
         {/* NAV */}
         <motion.nav className="portfolio-nav"
+  ref={navRef}
   initial={{ y: -60, opacity: 0 }}
   animate={{ y: 0, opacity: 1 }}
   transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1], delay: 0.8 }}
 >
   <span className="nav-logo" data-cursor="Top" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>CrooksCodes<em>.</em>com</span>
   <div className="nav-links" style={{ position: "relative" }}>
-    {["about", "skills", "projects", "experience", "contact"].map((item, i) => (
+    {NAV_ITEMS.map((item, i) => (
       <motion.button key={item} onClick={() => scrollTo(item)}
         data-cursor="Go"
         className={active === item ? "nav-btn nav-btn--active" : "nav-btn"}
@@ -823,6 +869,44 @@ export default function Home() {
       </motion.button>
     ))}
   </div>
+
+  <button
+    type="button"
+    className="nav-toggle"
+    aria-label={menuOpen ? "Close menu" : "Open menu"}
+    aria-expanded={menuOpen}
+    aria-controls="mobile-menu"
+    onClick={() => setMenuOpen((open) => !open)}
+  >
+    <span className="nav-toggle-line" aria-hidden="true" />
+    <span className="nav-toggle-line" aria-hidden="true" />
+  </button>
+
+  <AnimatePresence initial={false}>
+    {menuOpen && (
+      <motion.div
+        id="mobile-menu"
+        className="nav-menu"
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -8 }}
+        transition={reduce ? { duration: 0 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+      >
+        {NAV_ITEMS.map((item, i) => (
+          <button
+            key={item}
+            type="button"
+            className={active === item ? "nav-menu-link nav-menu-link--active" : "nav-menu-link"}
+            aria-current={active === item ? "true" : undefined}
+            onClick={() => { scrollTo(item); setMenuOpen(false); }}
+          >
+            <span className="nav-menu-num">{String(i + 1).padStart(2, "0")}</span>
+            <span className="nav-menu-label">{item.toUpperCase()}</span>
+          </button>
+        ))}
+      </motion.div>
+    )}
+  </AnimatePresence>
 </motion.nav>
 
         {/* HERO */}
@@ -849,7 +933,7 @@ export default function Home() {
             transition={{ duration: 0.65, delay: 1.35 }}
           >
             <p className="hero-desc">
-              I build websites and web apps end-to-end — the part people see and click,
+              I build websites and web apps end-to-end: the part people see and click,
               plus everything running quietly behind the scenes. Fast, reliable,
               and built to grow with you.
             </p>
@@ -882,7 +966,7 @@ export default function Home() {
               <div className="about-content">
                 <Reveal delay={0.1}>
                   <p className="about-text">
-                    I&apos;m a full-stack developer — I design and build complete websites and web apps,
+                    I&apos;m a full-stack developer. I design and build complete websites and web apps,
                     from the screens people click to the systems running behind them.
                     I care about getting the foundations right: sites that load fast, stay reliable,
                     and are easy to grow as your business does.
@@ -890,7 +974,7 @@ export default function Home() {
                 </Reveal>
                 <Reveal delay={0.2}>
                   <p className="about-text about-text--pull">
-                    The seams are where most of the work lives — where the frontend meets the API,
+                    The seams are where most of the work lives: where the frontend meets the API,
                     where the API meets the database. Getting those boundaries right is what
                     separates code that ships from code that lasts.
                   </p>
@@ -988,20 +1072,15 @@ export default function Home() {
         <section id="experience" className="section">
           <div className="section-inner">
             <Reveal><SectionLabel number="04">Experience</SectionLabel></Reveal>
-            {experience.map((exp, i) => (
-              <Reveal key={`${exp.role} ${exp.company}`} delay={0.1 + i * 0.08}>
-                <div className="exp-row">
-                  <span className="exp-year">{exp.year}</span>
-                  <div className="exp-content">
-                    <h3>
-                      {exp.role}
-                      <span className="exp-company"> · {exp.company}</span>
-                    </h3>
-                    {exp.desc && <p>{exp.desc}</p>}
-                  </div>
-                </div>
-              </Reveal>
-            ))}
+            <Timeline entries={experience} />
+          </div>
+        </section>
+
+        {/* EDUCATION */}
+        <section id="education" className="section">
+          <div className="section-inner">
+            <Reveal><SectionLabel number="05">Education</SectionLabel></Reveal>
+            <Timeline entries={education} />
           </div>
         </section>
 
@@ -1021,7 +1100,7 @@ export default function Home() {
               onClick={copyEmail}
             >
               <span className="contact-email-kicker">
-                {emailCopied ? "Copied —" : "Write to me —"}
+                {emailCopied ? "Copied:" : "Write to me:"}
               </span>
               <span className="contact-email-addr">jeremy@crookscodes.com</span>
               <span className="contact-email-arrow" aria-hidden="true">
@@ -1092,7 +1171,7 @@ export default function Home() {
   </div>
 
   <div className="portfolio-footer-bottom">
-    <span>CrooksCodes — Portfolio</span>
+    <span>CrooksCodes · Portfolio</span>
     <FooterClock />
     <span>© {new Date().getFullYear()}</span>
   </div>

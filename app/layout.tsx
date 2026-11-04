@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { SITE } from "@/lib/site";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -55,6 +56,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title,
     description,
+    creator: `@${SITE.socials.x.handle}`,
   },
   robots: {
     index: true,
@@ -68,6 +70,7 @@ export const metadata: Metadata = {
   },
   alternates: {
     canonical: siteUrl,
+    types: { "application/rss+xml": `${siteUrl}/feed.xml` },
   },
 };
 

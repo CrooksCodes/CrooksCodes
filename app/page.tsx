@@ -1,25 +1,24 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { preload } from "react-dom";
-import { education, experience, person, projects, skills } from "./_shared/content";
+import { education, experience, person, projects, skills, type TimelineEntry } from "./_shared/content";
 import { useContactForm } from "./_shared/useContactForm";
-import { DOOR, FIGURE_ITEMS, LOCKS } from "./lockSpec";
+import { LOCKS } from "./lockSpec";
 
 // Three.js and the model load after the page is readable; nothing waits on them
 const LockScene = dynamic(() => import("./LockScene"), { ssr: false });
 
 const NAV = [
-  { id: "about", label: "Notes" },
-  { id: "projects", label: "Figures" },
-  { id: "skills", label: "Parts" },
-  { id: "experience", label: "Revisions" },
+  { id: "about", label: "About" },
+  { id: "projects", label: "Projects" },
+  { id: "skills", label: "Skills" },
+  { id: "experience", label: "Experience" },
+  { id: "education", label: "Education" },
   { id: "contact", label: "Contact" },
 ];
-
-/** Items 1 to 7 are the figure's own parts; the stack follows as 8 onward. */
-const FIGURE_PARTS = FIGURE_ITEMS.map((s) => ({ s, g: "Figure" }));
 
 const ArrowOut = () => (
   <svg className="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 12 12 4M6 4h6v6" /></svg>
@@ -54,12 +53,11 @@ function Nav({ active }: { active: string }) {
     document.addEventListener("pointerdown", onDown);
     return () => { document.removeEventListener("keydown", onKey); document.removeEventListener("pointerdown", onDown); };
   }, [open]);
-  const current = NAV.find((n) => n.id === active || (active === "education" && n.id === "experience"));
   return (
-    <nav className="lock-nav" ref={ref} aria-label="Sheet">
+    <nav className="lock-nav" ref={ref} aria-label="Sections">
       <a className="nav-brand" href="#top">
         <span className="nav-brand-name">CrooksCodes</span>
-        <span className="nav-brand-no">DWG CC-2026 · SHEET 1 OF 1</span>
+        <span className="nav-brand-no">{person.city}</span>
       </a>
       <button type="button" className="nav-toggle" aria-expanded={open} aria-controls="lock-menu" onClick={() => setOpen((o) => !o)}>
         {open ? "Close" : "Menu"}
@@ -67,7 +65,7 @@ function Nav({ active }: { active: string }) {
       <ul id="lock-menu" className={open ? "nav-list is-open" : "nav-list"}>
         {NAV.map((n) => (
           <li key={n.id}>
-            <a href={`#${n.id}`} aria-current={current?.id === n.id ? "location" : undefined} onClick={() => setOpen(false)}>
+            <a href={`#${n.id}`} aria-current={active === n.id ? "location" : undefined} onClick={() => setOpen(false)}>
               {n.label}
             </a>
           </li>
@@ -79,6 +77,12 @@ function Nav({ active }: { active: string }) {
 
 function ContactForm() {
   const f = useContactForm();
+  const formRef = useRef<HTMLFormElement>(null);
+  const { fieldErrors } = f;
+  // a failed submit moves focus to the first field that needs fixing
+  useEffect(() => {
+    if (f.status === "error") formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [f.status, f.submitCount]);
   if (f.status === "success") {
     return (
       <div className="form-done" role="status" aria-live="polite">
@@ -89,36 +93,76 @@ function ContactForm() {
   }
   const busy = f.status === "submitting";
   return (
-    <form className="form" onSubmit={f.submit} noValidate>
+    <form className="form" ref={formRef} method="post" action="/api/contact" onSubmit={f.submit} noValidate>
       <div className="field">
         <label htmlFor="lk-name">Name</label>
-        <input id="lk-name" name="name" value={f.name} onChange={(e) => f.setName(e.target.value)} minLength={2} maxLength={100} required autoComplete="name" disabled={busy} />
+        <input id="lk-name" name="name" value={f.name} onChange={(e) => f.setName(e.target.value)} minLength={2} maxLength={100} required autoComplete="name" disabled={busy} aria-invalid={!!fieldErrors.name} aria-describedby={fieldErrors.name ? "lk-name-err" : undefined} />
+        {fieldErrors.name && <p className="field-error" id="lk-name-err">{fieldErrors.name}</p>}
       </div>
       <div className="field">
         <label htmlFor="lk-email">Email</label>
-        <input id="lk-email" name="email" type="email" value={f.email} onChange={(e) => f.setEmail(e.target.value)} required autoComplete="email" disabled={busy} />
+        <input id="lk-email" name="email" type="email" value={f.email} onChange={(e) => f.setEmail(e.target.value)} required autoComplete="email" disabled={busy} aria-invalid={!!fieldErrors.email} aria-describedby={fieldErrors.email ? "lk-email-err" : undefined} />
+        {fieldErrors.email && <p className="field-error" id="lk-email-err">{fieldErrors.email}</p>}
       </div>
       <div className="field field--wide">
         <label htmlFor="lk-message">Message <span className="field-count">{f.message.length} / 1000</span></label>
-        <textarea id="lk-message" name="message" rows={5} value={f.message} onChange={(e) => f.setMessage(e.target.value)} minLength={10} maxLength={1000} required disabled={busy} />
+        <textarea id="lk-message" name="message" rows={4} value={f.message} onChange={(e) => f.setMessage(e.target.value)} minLength={10} maxLength={1000} required disabled={busy} aria-invalid={!!fieldErrors.message} aria-describedby={fieldErrors.message ? "lk-message-err" : undefined} />
+        {fieldErrors.message && <p className="field-error" id="lk-message-err">{fieldErrors.message}</p>}
       </div>
-      {f.status === "error" && <p className="form-error" role="alert">{f.error}</p>}
+      {f.error && <p className="form-error" role="alert">{f.error}</p>}
       <div className="field--wide form-actions">
         <button type="submit" className="action" disabled={busy}>{busy ? "Sending" : "Send message"}</button>
-        <span className="form-note">Or email <a href={`mailto:${person.email}`}>{person.email}</a></span>
       </div>
     </form>
   );
 }
 
+function Timeline({ entries, caption }: { entries: TimelineEntry[]; caption: string }) {
+  return (
+    <table className="tbl tbl--dates">
+      <caption className="sr">{caption}</caption>
+      <thead><tr><th scope="col">Dates</th><th scope="col">Role</th></tr></thead>
+      <tbody>
+        {entries.map((e) => (
+          <tr key={e.org}>
+            <td>{e.label}</td>
+            <td><strong>{e.role}, {e.org}.</strong> {e.body}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function Block({ id, side, wide, title, tag, lead, children }: {
+  id: string; side: "left" | "right"; wide?: boolean; title: string; tag: string; lead: string; children: React.ReactNode;
+}) {
+  return (
+    <section id={id} tabIndex={-1} className={`block block--${side}${wide ? " block--wide" : ""}`}>
+      <div className="block-head">
+        <h2 className="block-title">{title}</h2>
+        <span className="lock-tag">{tag}</span>
+      </div>
+      <p className="block-lead">{lead}</p>
+      <div className="block-gate">
+        <div className="block-shutter" aria-hidden="true"><span>Locked</span></div>
+        <div className="block-inner">{children}</div>
+      </div>
+    </section>
+  );
+}
+
+const lockTag = (i: number) => `Lock ${LOCKS[i].n} of ${LOCKS.length}`;
+
 export default function LockPage() {
   preload("/models/door.glb", { as: "fetch", crossOrigin: "anonymous" });
-  const [active, setActive] = useState("about");
+  const [active, setActive] = useState("");
   useEffect(() => {
-    const ids = ["about", "projects", "skills", "experience", "education", "contact"];
+    const ids = NAV.map((n) => n.id);
+    const showing = new Set<string>();
     const obs = new IntersectionObserver((entries) => {
-      const vis = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-      if (vis[0]) setActive(vis[0].target.id);
+      for (const e of entries) { if (e.isIntersecting) showing.add(e.target.id); else showing.delete(e.target.id); }
+      setActive(ids.find((id) => showing.has(id)) ?? "");
     }, { rootMargin: "-22% 0px -66% 0px", threshold: 0 });
     ids.forEach((id) => { const el = document.getElementById(id); if (el) obs.observe(el); });
     return () => obs.disconnect();
@@ -126,7 +170,10 @@ export default function LockPage() {
 
   return (
     <>
-      <a className="skip" href="#projects">Skip to the figures</a>
+      <noscript>
+        <style dangerouslySetInnerHTML={{ __html: ".content{margin-top:0!important}.nav-toggle{display:none!important}.form{display:none!important}" }} />
+      </noscript>
+      <a className="skip" href="#projects">Skip to the projects</a>
       <SheetFrame />
       <LockScene />
       <div className="sheet" id="top">
@@ -135,223 +182,130 @@ export default function LockPage() {
         <main className="content">
           <header className="hero">
             <div className="hero-left">
-            <h1 className="title">{person.name}</h1>
-            <p className="claim">
-              Full-stack developer in Halifax, first year of computer science at Dalhousie.
-              I ship whole web apps, and I&apos;m after a cyber security <span className="nowrap">co-op</span> because
-              the interesting part is where they come apart.
-            </p>
-            <div className="hero-actions">
-              <a className="action" href="#contact">Send a message</a>
-              <a className="link-quiet" href="#projects">See the figures <ArrowDown /></a>
-            </div>
+              <h1 className="title">{person.name}</h1>
+              <p className="claim">
+                Full-stack developer in Halifax, first year of computer science at Dalhousie.
+                I ship whole web apps, and I&apos;m after a cyber security <span className="nowrap">co-op</span> because
+                the interesting part is where they come apart.
+              </p>
+              <div className="hero-actions">
+                <a className="action" href="#contact">Send a message</a>
+                <a className="link-quiet" href="#projects">See the projects <ArrowDown /></a>
+              </div>
             </div>
             <div className="hero-right">
-            <dl className="kv">
-              <div><dt>Drawn by</dt><dd>{person.name}</dd></div>
-              <div><dt>Location</dt><dd>{person.city}</dd></div>
-              <div><dt>Status</dt><dd>B.C.S. year 1 of 4, Dalhousie University</dd></div>
-              <div><dt>Looking for</dt><dd>Cyber security co-op</dd></div>
-            </dl>
-            <p className="hero-hint">Scroll. Five locks release one block at a time, top to bottom, and the door opens at the end. Each lock is a security layer.</p>
+              <dl className="kv">
+                <div><dt>Email</dt><dd><a href={`mailto:${person.email}`}>{person.email}</a></dd></div>
+                <div><dt>GitHub</dt><dd><a href={person.github.url} target="_blank" rel="noreferrer">@{person.github.handle}</a></dd></div>
+                <div><dt>LinkedIn</dt><dd><a href={person.linkedin.url} target="_blank" rel="noreferrer">{person.linkedin.handle}</a></dd></div>
+                <div><dt>Looking for</dt><dd>Cyber security co-op</dd></div>
+              </dl>
             </div>
           </header>
 
-          <section id="about" className="block block--left">
-            <h2 className="block-tab">Notes</h2>
-            <p className="block-layer"><span>Lock 1 · {LOCKS[0].name} · {LOCKS[0].layer}</span>{LOCKS[0].layerNote}</p>
-            <p className="block-lead">Getting the foundations right is most of the job.</p>
-            <div className="block-gate">
-              <div className="block-shutter" aria-hidden="true"><span>Locked</span></div>
-              <div className="block-inner">
-            <ol className="notes">
-              <li>
+          <Block id="about" side="left" title="About" tag={lockTag(0)} lead="Getting the foundations right is most of the job.">
+            <div className="notes">
+              <p>
                 I build websites and web apps end to end: the screens people use, and the API and
                 database behind them. Most of the real work sits at the seams, where the frontend
                 meets the API and the API meets the data.
-              </li>
-              <li>
+              </p>
+              <p>
                 Since May 2026 this has been paid work. I maintain One North End&apos;s website and
                 internal tools, and I co-run Dory Digital, where I build every client site from scratch.
-              </li>
-              <li>
-                Cyber security is where I&apos;m headed. Year 1 of 4 at Dalhousie. I don&apos;t have
-                security work to show yet, so this sheet shows what I do have: shipped software and the
-                habit of taking it apart to see how it fails. Five locks on one door is the drawing&apos;s joke about defence in depth; the sheet opens them one block at a time.
-              </li>
-              <li>
-                This page is part of the evidence. Next.js, hand-written CSS, a door modelled in Blender, and one
-                Three.js scene driven by scroll position. No template.
-              </li>
-            </ol>
+              </p>
+              <p>
+                Cyber security is where I&apos;m headed. I don&apos;t have security work to show yet, so
+                this page shows what I do have: shipped software and the habit of taking it apart to see how it fails.
+              </p>
+              <p>
+                This page is part of the evidence: Next.js, hand-written CSS, a door modelled in Blender,
+                and one Three.js scene driven by scroll position.
+              </p>
+            </div>
             <table className="tbl tbl--schedule">
-              <caption>Lock schedule: each lock, the layer it stands for, and the block that releases it</caption>
-              <thead><tr><th scope="col">Item</th><th scope="col">Lock</th><th scope="col">Layer</th><th scope="col">Released by</th></tr></thead>
+              <caption>The door is defence in depth: five locks, one per section, and every one has to give before it opens.</caption>
+              <thead><tr><th scope="col">Lock</th><th scope="col">Hardware</th><th scope="col">Stands for</th></tr></thead>
               <tbody>
                 {LOCKS.map((l) => (
                   <tr key={l.n}>
-                    <td>{l.n}</td><td>{l.name}</td><td>{l.layer}</td><td>{l.sectionLabel}</td>
+                    <td>{l.n}</td><td>{l.name}</td><td><strong>{l.layer}.</strong> {l.layerNote}</td>
                   </tr>
                 ))}
-                <tr>
-                  <td>6</td><td>Door leaf</td><td>{DOOR.layer}</td><td>Title block</td>
-                </tr>
               </tbody>
             </table>
-              </div>
-            </div>
-          </section>
+          </Block>
 
-          <section id="projects" className="block block--right">
-            <h2 className="block-tab">Figures</h2>
-            <p className="block-layer"><span>Lock 2 · {LOCKS[1].name} · {LOCKS[1].layer}</span>{LOCKS[1].layerNote}</p>
-            <p className="block-lead">Four things I shipped. Three are live.</p>
-            <div className="block-gate">
-              <div className="block-shutter" aria-hidden="true"><span>Locked</span></div>
-              <div className="block-inner">
+          <Block id="projects" side="right" wide title="Projects" tag={lockTag(1)} lead="Three apps live, a fourth in progress.">
             <div className="figs">
-              {projects.map((p, i) => {
-                const n = i + 1;
+              {projects.map((p) => {
                 const live = p.status === "live" && p.href && p.image;
                 return (
-                  <figure key={p.id} className={live ? "fig" : "fig fig--prelim"} id={`fig-${n}`}>
-                    <div className="fig-frame">
-                      {live ? (
-                        <a href={p.href} target="_blank" rel="noreferrer" className="fig-views" aria-label={`Open ${p.title} in a new tab`}>
-                          <span className="view view--a">
-                            <img src={p.image!.desktop} alt={`${p.title}, desktop view`} width={1440} height={900} loading={n === 1 ? "eager" : "lazy"} decoding="async" />
-                            <span className="view-label">View A · desktop</span>
-                          </span>
-                          <span className="view view--b">
-                            <img src={p.image!.mobile} alt={`${p.title}, phone view`} width={390} height={844} loading="lazy" decoding="async" />
-                            <span className="view-label">View B · phone</span>
-                          </span>
-                        </a>
-                      ) : (
-                        <div className="fig-views fig-views--prelim">
-                          <span className="stamp">Preliminary<br />not for release</span>
-                        </div>
-                      )}
-                    </div>
+                  <figure key={p.id} className={live ? "fig" : "fig fig--prelim"}>
                     <figcaption className="fig-cap">
-                      <span className="fig-no">Fig. {n}</span>
-                      <h3 className="fig-title">{p.title}</h3>
-                      <p className="fig-summary">{p.summary}</p>
-                      <p className="fig-body">{p.body}</p>
-                      <p className="fig-meta">
-                        <span className="fig-stack">{p.stack.join(" · ")}</span>
+                      <div className="fig-head">
+                        <h3 className="fig-title">{p.title}</h3>
                         {live ? (
                           <a className="fig-link" href={p.href} target="_blank" rel="noreferrer">Open site <ArrowOut /></a>
                         ) : (
                           <span className="fig-link fig-link--off">In progress, {p.year}</span>
                         )}
-                      </p>
+                      </div>
+                      <p className="fig-summary">{p.summary}</p>
+                      <p className="fig-body">{p.body}</p>
+                      <p className="fig-stack">{p.stack.join(" · ")}</p>
                     </figcaption>
+                    {live && (
+                      <div className="fig-frame">
+                        <a href={p.href} target="_blank" rel="noreferrer" tabIndex={-1} className="fig-views">
+                          <Image src={p.image!.desktop} alt={`${p.title} on a desktop, ${p.image!.shows}`} width={1440} height={900} sizes="(max-width: 900px) 62vw, 44vw" />
+                          <Image src={p.image!.mobile} alt={`${p.title} on a phone, ${p.image!.shows}`} width={780} height={1688} sizes="(max-width: 520px) 60vw, (max-width: 900px) 30vw, 14vw" />
+                        </a>
+                      </div>
+                    )}
                   </figure>
                 );
               })}
             </div>
-              </div>
-            </div>
-          </section>
+          </Block>
 
-          <section id="skills" className="block block--left">
-            <h2 className="block-tab">Parts list</h2>
-            <p className="block-layer"><span>Lock 3 · {LOCKS[2].name} · {LOCKS[2].layer}</span>{LOCKS[2].layerNote}</p>
-            <p className="block-lead">What the figure, and the figures, are made of.</p>
-            <div className="block-gate">
-              <div className="block-shutter" aria-hidden="true"><span>Locked</span></div>
-              <div className="block-inner">
-            <table className="tbl tbl--parts">
-              <caption className="sr">Parts list, grouped</caption>
-              <thead><tr><th scope="col">Item</th><th scope="col">Part</th><th scope="col">Group</th></tr></thead>
+          <Block id="skills" side="left" title="Skills" tag={lockTag(2)} lead="What I build with.">
+            <table className="tbl tbl--skills">
+              <caption className="sr">Skills, grouped</caption>
+              <colgroup><col className="col-group" /><col /></colgroup>
               <tbody>
-                {[...FIGURE_PARTS, ...skills.flatMap((g) => g.items.map((s) => ({ g: g.title, s })))].map((row, i) => (
-                  <tr key={row.s}>
-                    <td>{String(i + 1).padStart(2, "0")}</td><td>{row.s}</td><td>{row.g}</td>
+                {skills.map((g) => (
+                  <tr key={g.title}>
+                    <th scope="row">{g.title}</th>
+                    <td>{g.items.join(", ")}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-              </div>
-            </div>
-          </section>
+          </Block>
 
-          <section id="experience" className="block block--right">
-            <h2 className="block-tab">Revisions</h2>
-            <p className="block-layer"><span>Lock 4 · {LOCKS[3].name} · {LOCKS[3].layer}</span>{LOCKS[3].layerNote}</p>
-            <p className="block-lead">Where I&apos;ve worked.</p>
-            <div className="block-gate">
-              <div className="block-shutter" aria-hidden="true"><span>Locked</span></div>
-              <div className="block-inner">
-            <table className="tbl tbl--rev">
-              <caption className="sr">Experience, by revision</caption>
-              <thead><tr><th scope="col">Rev</th><th scope="col">Date</th><th scope="col">Description</th><th scope="col">By</th></tr></thead>
-              <tbody>
-                {experience.map((e, i) => (
-                  <tr key={e.org}>
-                    <td>{String.fromCharCode(65 + experience.length - 1 - i)}</td>
-                    <td>{e.label}</td>
-                    <td><strong>{e.role}, {e.org}.</strong> {e.body}</td>
-                    <td>JC</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-              </div>
-            </div>
-          </section>
+          <Block id="experience" side="right" title="Experience" tag={lockTag(3)} lead="Where I've worked.">
+            <Timeline entries={experience} caption="Work experience" />
+          </Block>
 
-          <section id="education" className="block block--left block--tight">
-            <h2 className="block-tab block-tab--quiet">Revisions, continued</h2>
-            <p className="block-layer"><span>Lock 5 · {LOCKS[4].name} · {LOCKS[4].layer}</span>{LOCKS[4].layerNote}</p>
-            <p className="block-lead">Where I&apos;ve studied.</p>
-            <div className="block-gate">
-              <div className="block-shutter" aria-hidden="true"><span>Locked</span></div>
-              <div className="block-inner">
-            <table className="tbl tbl--rev">
-              <caption className="sr">Education, by revision</caption>
-              <thead><tr><th scope="col">Rev</th><th scope="col">Date</th><th scope="col">Description</th><th scope="col">By</th></tr></thead>
-              <tbody>
-                {education.map((e, i) => (
-                  <tr key={e.org}>
-                    <td>{String.fromCharCode(65 + education.length - 1 - i)}</td>
-                    <td>{e.label}</td>
-                    <td><strong>{e.role}, {e.org}.</strong> {e.body}</td>
-                    <td>JC</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-              </div>
-            </div>
-          </section>
+          <Block id="education" side="left" title="Education" tag={lockTag(4)} lead="Where I've studied.">
+            <Timeline entries={education} caption="Education" />
+          </Block>
 
-          <section id="contact" className="block block--right">
-            <h2 className="block-tab">Title block</h2>
-            <p className="block-layer"><span>The door · {DOOR.layer}</span>{DOOR.layerNote}</p>
-            <p className="block-lead">Hiring for a security co-op? Let&apos;s talk.</p>
-            <div className="block-gate">
-              <div className="block-shutter" aria-hidden="true"><span>Locked</span></div>
-              <div className="block-inner">
-            <div className="titleblock">
-              <div className="tb-cell"><span className="tb-k">Drawn by</span><span className="tb-v">{person.name}</span></div>
-              <div className="tb-cell"><span className="tb-k">Status</span><span className="tb-v">Open to a cyber security co-op</span></div>
-              <div className="tb-cell"><span className="tb-k">Location</span><span className="tb-v">{person.city}</span></div>
-              <div className="tb-cell"><span className="tb-k">Email</span><a className="tb-v" href={`mailto:${person.email}`}>{person.email}</a></div>
-              <div className="tb-cell"><span className="tb-k">GitHub</span><a className="tb-v" href={person.github.url} target="_blank" rel="noreferrer">@{person.github.handle}</a></div>
-              <div className="tb-cell"><span className="tb-k">LinkedIn</span><a className="tb-v" href={person.linkedin.url} target="_blank" rel="noreferrer">{person.linkedin.handle}</a></div>
-              <div className="tb-cell tb-cell--form"><ContactForm /></div>
-            </div>
-              </div>
-            </div>
-          </section>
+          <Block id="contact" side="right" title="Contact" tag="The door" lead="Hiring for a security co-op? Let's talk.">
+            <noscript><p className="form-note">The form needs JavaScript. Email me at <a href={`mailto:${person.email}`}>{person.email}</a>.</p></noscript>
+            <ContactForm />
+            <dl className="kv kv--contact">
+              <div><dt>Email</dt><dd><a href={`mailto:${person.email}`}>{person.email}</a></dd></div>
+              <div><dt>GitHub</dt><dd><a href={person.github.url} target="_blank" rel="noreferrer">@{person.github.handle}</a></dd></div>
+              <div><dt>LinkedIn</dt><dd><a href={person.linkedin.url} target="_blank" rel="noreferrer">{person.linkedin.handle}</a></dd></div>
+            </dl>
+          </Block>
         </main>
 
         <footer className="lock-footer">
           <span>{person.brand} · {person.name} · {person.city}</span>
-          <span>Captures of the live sites taken 2026-11-04</span>
-          <span>Sheet 1 of 1</span>
+          <span>Project captures taken 2026-11-05</span>
         </footer>
       </div>
     </>

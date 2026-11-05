@@ -34,21 +34,33 @@ const ENTER: Shot = { fx: 10, fy: -3, h: 46, sx: 0.72, rx: 0.1, ry: -1.0 };
 function shotsFor(phone: boolean): Shot[] {
   const [a, b, c, d, e] = LOCKS.map((l) => l.y);
   if (phone) {
-    const close = (y: number, ry: number): Shot => ({ fx: 3, fy: y, h: 21, sx: 0, rx: 0.04, ry });
+    const close = (y: number, ry: number): Shot => ({ fx: 3, fy: y, h: 19, sx: 0, rx: 0.04, ry });
     return [
-      { fx: 10, fy: 0, h: 54, sx: 0, rx: 0.05, ry: -0.22 },
+      { fx: 10, fy: 0, h: 52, sx: 0, rx: 0.05, ry: -0.22 },
       close(a, -0.14), close(b, 0.14), close(c, -0.14), close(d, 0.14), close(e, -0.14),
-      { fx: 12, fy: 0, h: 60, sx: 0, rx: 0.06, ry: -0.2 },
+      { fx: 11, fy: -3, h: 62, sx: 0, rx: 0.08, ry: -0.12 },
     ];
   }
   // text left, door right; text right, door left. The visible half is centred on the hardware.
   const right = (y: number): Shot => ({ fx: 3.5, fy: y, h: 30, sx: 0.23, rx: 0.05, ry: -0.3 });
   const left = (y: number): Shot => ({ fx: 3.5, fy: y, h: 30, sx: -0.23, rx: 0.05, ry: 0.3 });
   return [
-    { fx: 10, fy: 1.5, h: 74, sx: 0.23, rx: 0.05, ry: -0.3 },
-    right(a), left(b), right(c), left(d), right(e),
-    { fx: 12, fy: 2.5, h: 74, sx: -0.24, rx: 0.06, ry: -0.24 },
+    { fx: 10.5, fy: 0.5, h: 80, sx: 0.225, rx: 0.05, ry: -0.3 },
+    // the projects column is wider, so the door pulls back into the narrower side
+    right(a), { fx: 3.5, fy: b, h: 36, sx: -0.315, rx: 0.05, ry: 0.3 }, right(c), left(d), right(e),
+    // the swung leaf sits toward the viewer on the hinge side, leaving the lit opening clear
+    { fx: 9, fy: -3, h: 76, sx: -0.25, rx: 0.08, ry: -0.1 },
   ];
+}
+
+/** Paints a small canvas once, for the soft light and shadow the model doesn't carry. */
+function painted(w: number, h: number, paint: (c: CanvasRenderingContext2D) => void) {
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  paint(canvas.getContext("2d")!);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
 }
 
 export default function LockScene() {
@@ -72,10 +84,10 @@ export default function LockScene() {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.shadowMap.autoUpdate = false;
     const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const phone = matchMedia("(max-width: 900px)");
+    const phone = matchMedia("(max-width: 900px), (max-aspect-ratio: 1/1)");
     const keepQuality = new URLSearchParams(location.search).has("hq");
 
     // ── scene: clay under one warm key and a cool rim ─────────────
@@ -107,6 +119,56 @@ export default function LockScene() {
     door.add(leaf);
     content.add(jamb, door);
 
+    // ── what the model doesn't carry: the lit room behind the door, the light it lets out, its shadow on the paper ──
+    const flat = (w: number, h: number, material: THREE.Material, x: number, y: number, z: number) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), material);
+      m.position.set(x, y, z);
+      return m;
+    };
+    const room = new THREE.MeshBasicMaterial({
+      toneMapped: false,
+      map: painted(128, 180, (c) => {
+        const g = c.createRadialGradient(64, 110, 6, 64, 96, 130);
+        g.addColorStop(0, "#ffe2b4"); g.addColorStop(0.4, "#f3ab62"); g.addColorStop(0.8, "#a9591f"); g.addColorStop(1, "#5c2c10");
+        c.fillStyle = g; c.fillRect(0, 0, 128, 180);
+      }),
+    });
+    const ROOM_DARK = new THREE.Color(0x0d0f12), ROOM_LIT = new THREE.Color(0xffffff);
+    room.color.copy(ROOM_DARK);
+    jamb.add(flat(32, 47, room, 15.3, 0, -4.4));
+    const spill = new THREE.MeshBasicMaterial({
+      transparent: true, depthWrite: false, toneMapped: false, opacity: 0,
+      map: painted(128, 128, (c) => {
+        // per pixel, so the pool's edge and falloff stay smooth: narrow at the sill, widening and fading out
+        const img = c.createImageData(128, 128);
+        for (let y = 0; y < 128; y++) {
+          const t = y / 127;
+          const half = lerp(0.2, 0.38, t), edge = 0.05 + 0.1 * t;
+          for (let x = 0; x < 128; x++) {
+            const side = clamp01((half + edge - Math.abs(x / 127 - 0.5)) / (2 * edge));
+            const i = (y * 128 + x) * 4;
+            img.data.set([240, 165, 90, 255 * 0.72 * Math.pow(1 - t, 1.7) * side * side * (3 - 2 * side)], i);
+          }
+        }
+        c.putImageData(img, 0, 0);
+      }),
+    });
+    const spillMesh = flat(56, 44, spill, 15.3, DOOR.bottom - 2.4, 22.6);
+    spillMesh.rotation.x = -Math.PI / 2;
+    const shade = new THREE.MeshBasicMaterial({
+      transparent: true, depthWrite: false, toneMapped: false,
+      map: painted(128, 128, (c) => {
+        // the rectangle is drawn off the canvas; only its blurred shadow lands on it
+        c.shadowColor = "rgba(26,28,31,0.38)"; c.shadowBlur = 16; c.shadowOffsetX = 256;
+        c.fillStyle = "#000"; c.fillRect(22 - 256, 20, 84, 88);
+      }),
+    });
+    const shadeMesh = flat(70, 62, shade, 11, -3.4, -6);
+    shadeMesh.renderOrder = -1;
+    const roomLight = new THREE.PointLight(0xffb36b, 0, 70, 1.4);
+    roomLight.position.set(15, 0, -1);
+    content.add(spillMesh, shadeMesh, roomLight);
+
     const [L1, L2, L3, L4, L5] = LOCKS;
     const Z = 0.6; // the leaf's front plane; hardware sits on it
     const at = (x: number, y: number, z: number, parent: THREE.Object3D) => {
@@ -131,7 +193,7 @@ export default function LockScene() {
     let W = 1, H = 1, shots = shotsFor(phone.matches);
     let quality = 0;   // 0 full, 1 lower resolution, 2 no shadows too
     const applyPixelRatio = () => {
-      const cap = quality > 0 ? 1 : phone.matches ? 1.25 : 1.5;
+      const cap = quality > 0 ? 1 : 1.5;
       renderer.setPixelRatio(Math.min(devicePixelRatio || 1, cap));
       renderer.setSize(W, H, false);
     };
@@ -151,35 +213,42 @@ export default function LockScene() {
       viewH = innerHeight;
       tops = sectionEls.map((el) => (el ? el.getBoundingClientRect().top + scrollY : Infinity));
     };
-    const target = { r: [0, 0, 0, 0, 0], door: 0, u: -1 };
-    const cur = { r: [0, 0, 0, 0, 0], door: 0, u: -1 };
+    const target = { r: [0, 0, 0, 0, 0], door: 0, u: -1, gate: [0, 0, 0, 0, 0, 0] };
+    const cur = { r: [0, 0, 0, 0, 0], door: 0, u: -1, gate: [0, 0, 0, 0, 0, 0] };
     const readScroll = () => {
-      if (reduced) { target.r.fill(1); target.door = 1; target.u = 5; return; }
       const ref = scrollY + viewH * 0.62;
       const last = tops.findLastIndex((t) => ref >= t);   // -1 while on the hero
       const r = [0, 0, 0, 0, 0];
-      for (let i = 0; i < 5; i++) r[i] = clamp01((ref - tops[i]) / (viewH * 0.45));
+      // each lock runs as its block climbs from 72% of the way down the screen to 30%
+      const release = scrollY + viewH * 0.72;
+      for (let i = 0; i < 5; i++) r[i] = clamp01((release - tops[i]) / (viewH * 0.42));
       target.r = r;
-      target.door = clamp01((ref - tops[5]) / (viewH * 0.45));
+      target.door = clamp01((release - tops[5]) / (viewH * 0.42));
+      // the lid is gone before the block is high enough to read: fully open by 68% down the screen
+      target.gate = tops.map((t) => clamp01((scrollY + viewH * 0.98 - t) / (viewH * 0.3)));
+      // reduced motion: the same story in stills. Each state cuts to the next, nothing travels
+      if (reduced) {
+        target.r = r.map((v) => (v > 0 ? 1 : 0));
+        target.door = target.door > 0 ? 1 : 0;
+        target.gate.fill(1);
+      }
       // the door arrives at the next lock just before its block starts releasing it
       const next = tops[last + 1];
       const travel = next === undefined ? 0 : clamp01((ref - (next - viewH * 0.5)) / (viewH * 0.5));
-      target.u = last + travel;
+      target.u = reduced ? last : last + travel;
     };
 
-    // the block bodies open with their locks; written straight to the two elements that move
+    // each lid retracts just ahead of its lock; written straight to the one element that moves
     const gates = sectionEls.map((el) => ({
       shutter: el?.querySelector<HTMLElement>(".block-shutter") ?? null,
-      inner: el?.querySelector<HTMLElement>(".block-inner") ?? null,
       value: -1,
     }));
     const publish = (i: number, v: number) => {
       const g = gates[i];
       const q = Math.round(clamp01(v) * 50) / 50;
-      if (!g.shutter || !g.inner || g.value === q) return;
+      if (!g.shutter || g.value === q) return;
       g.value = q;
-      g.shutter.style.transform = `scaleY(${1 - q})`;
-      g.inner.style.opacity = String(0.12 + 0.88 * q);
+      g.shutter.style.clipPath = `inset(${q * 100}% 0 0 0)`;
     };
 
     // ── frame loop: runs only until everything has settled ────────
@@ -208,7 +277,7 @@ export default function LockScene() {
         }
       }
 
-      const k = 1 - Math.exp(-dt * 8), kd = 1 - Math.exp(-dt * 4.5), ku = 1 - Math.exp(-dt * 4);
+      const k = reduced ? 1 : 1 - Math.exp(-dt * 8), kd = reduced ? 1 : 1 - Math.exp(-dt * 4.5), ku = reduced ? 1 : 1 - Math.exp(-dt * 4);
       let moving = false;
       const step = (from: number, to: number, f: number) => {
         const d = to - from;
@@ -221,8 +290,7 @@ export default function LockScene() {
       cur.u = step(cur.u, target.u, ku);
       if (enter < 1) { enter = Math.min(1, enter + dt / ENTER_SECONDS); moving = true; }
 
-      for (let i = 0; i < 5; i++) publish(i, cur.r[i] / 0.85);
-      publish(5, cur.door / 0.5);
+      for (let i = 0; i < 6; i++) { cur.gate[i] = step(cur.gate[i], target.gate[i], k); publish(i, cur.gate[i]); }
 
       // load-in: the door swings in from the right and its locks throw shut, top to bottom
       const engaged = (i: number) => reduced ? 1 : ease((enter - 0.34 - i * 0.11) / 0.14);
@@ -245,6 +313,11 @@ export default function LockScene() {
       rig.rotation.set(shot.rx, shot.ry, 0);
       content.position.set(-shot.fx, -shot.fy, 0);
       door.rotation.y = open * (DOOR.openDeg * Math.PI) / 180;
+      room.color.lerpColors(ROOM_DARK, ROOM_LIT, open);
+      spill.opacity = open;
+      spillMesh.visible = open > 0.01;
+      roomLight.intensity = 90 * open;
+      rimLight.intensity = lerp(1.1, 0.35, open);   // a raking rim would exaggerate the dents on the swung leaf
 
       // 1 · barrel slides clear of the keep and clacks against its stop
       barrel.position.x = 1 + 7 * back(r1);
@@ -277,7 +350,7 @@ export default function LockScene() {
       padlock.position.y = lerp(L4.y, DOOR.bottom + 2.4, fall * fall) + 1.2 * Math.sin(fall * Math.PI) * (1 - fall);
       padlock.position.x = -2.5 - 4.5 * fall;
       padlock.rotation.z = 1.25 * fall;
-      hasp.rotation.z = (80 * Math.PI / 180) * back((r4 - 0.55) / 0.45);
+      hasp.rotation.z = (100 * Math.PI / 180) * back((r4 - 0.55) / 0.45);
       // 5 · the hook swings off its eye
       hook.rotation.z = (30 * Math.PI / 180) * back(r5);
 
@@ -298,7 +371,7 @@ export default function LockScene() {
     const ro = new ResizeObserver(onResize);
     const contentEl = document.querySelector(".content");
     layout(); measure(); readScroll();
-    Object.assign(cur, { r: [...target.r], door: target.door, u: target.u });
+    Object.assign(cur, { r: [...target.r], door: target.door, u: target.u, gate: [...target.gate] });
 
     let disposed = false;
     new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load("/models/door.glb", (gltf) => {
@@ -343,9 +416,14 @@ export default function LockScene() {
       });
       scene.environment?.dispose();
       renderer.dispose();
-      gates.forEach((g) => { g.shutter?.style.removeProperty("transform"); g.inner?.style.removeProperty("opacity"); });
+      gates.forEach((g) => { g.shutter?.style.removeProperty("clip-path"); });
     };
   }, []);
+
+  // without the figure, the phone layout gives back the space it reserved for the door
+  useEffect(() => {
+    document.documentElement.classList.toggle("no-figure", failed);
+  }, [failed]);
 
   if (failed) return null;
   return (

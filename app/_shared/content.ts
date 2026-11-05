@@ -26,8 +26,8 @@ export type Project = {
   body: string;
   stack: string[];
   href?: string;
-  /** Real captures of the live site, taken 2026-11-04. */
-  image?: { desktop: string; mobile: string };
+  /** Real captures of the live site in use, taken 2026-11-05. `shows` is the alt text. */
+  image?: { desktop: string; mobile: string; shows: string };
   status: "live" | "building";
 };
 
@@ -40,7 +40,7 @@ export const projects: Project[] = [
     body: "Two people swipe through nearby restaurants on their own phones. The first place both say yes to is the match. Live sessions, no account needed to join one.",
     stack: ["Next.js", "TypeScript", "Supabase", "Tailwind"],
     href: "https://table4two-crookscodes.vercel.app",
-    image: { desktop: "/projects/table4two.png", mobile: "/projects/table4two-mobile.png" },
+    image: { desktop: "/projects/table4two.png", mobile: "/projects/table4two-mobile.png", shows: "setting up a session: location, cuisines, price range and distance" },
     status: "live",
   },
   {
@@ -51,7 +51,7 @@ export const projects: Project[] = [
     body: "Asks seven forecast models at once, surfaces the consensus, and shows where they disagree, so you can see how sure the forecast actually is.",
     stack: ["Svelte 5", "TypeScript", "Vite"],
     href: "https://truecast-crookscodes.vercel.app",
-    image: { desktop: "/projects/truecast.png", mobile: "/projects/truecast-mobile.png" },
+    image: { desktop: "/projects/truecast.png", mobile: "/projects/truecast-mobile.png", shows: "the forecast for Halifax, with how closely the models agree" },
     status: "live",
   },
   {
@@ -62,7 +62,7 @@ export const projects: Project[] = [
     body: "Filterable shop, product pages, and a cart that remembers what you added. A hand-built alternative to an off-the-shelf Shopify theme.",
     stack: ["Next.js", "TypeScript", "Prisma", "Tailwind"],
     href: "https://streetwear-crookscodes.vercel.app",
-    image: { desktop: "/projects/streetwear.png", mobile: "/projects/streetwear-mobile.png" },
+    image: { desktop: "/projects/streetwear.png", mobile: "/projects/streetwear-mobile.png", shows: "the shop page, with filters and product photos" },
     status: "live",
   },
   {

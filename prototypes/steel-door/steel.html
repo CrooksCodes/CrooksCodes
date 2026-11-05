@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Door prototype: steel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;background:#090b0c;color:#EEE9DF;font-family:Archivo,Arial,sans-serif;font-size:18px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  #c{position:fixed;inset:0;width:100vw;height:100vh;height:100lvh;display:block}
+  main{position:relative;--x:62%}
+  h1{font-weight:700;font-size:clamp(50px,6vw,96px);line-height:.96;letter-spacing:-.025em;margin:0 0 22px}
+  h2{font-weight:700;font-size:clamp(40px,4.4vw,70px);line-height:1;letter-spacing:-.02em;margin:0 0 14px}
+  h3{font-weight:500;font-size:28px;line-height:1.15;letter-spacing:-.01em;margin:0 0 8px}
+  p{margin:0 0 12px;max-width:34em}
+  a{color:inherit;text-underline-offset:4px}
+  .hero{height:100vh;display:flex;flex-direction:column;justify-content:center;padding:0 5vw 0 var(--x);box-sizing:border-box}
+  .pin{height:210vh}
+  .pin--wheel{height:240vh}
+  .pin-in{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;justify-content:center;padding:0 5vw 0 var(--x);box-sizing:border-box}
+  .reveal{opacity:0}
+  .flow{padding:0 5vw 0 var(--x);box-sizing:border-box}
+  .proj{margin:0 0 100px}
+  .meta{font-size:14px;letter-spacing:.03em;color:#C9C4B8}
+  .links{display:grid;gap:4px;margin-top:8px}
+  .links a{display:inline-block;padding:6px 0}
+  .readout{position:fixed;left:18px;bottom:14px;font-size:13px;color:#A9A69D;font-variant-numeric:tabular-nums}
+  @media (max-width:900px),(max-aspect-ratio:1/1){
+    main{--x:6vw}
+    body{font-size:17px}
+    .hero{justify-content:flex-start;padding-top:12vh;padding-right:36vw}
+    .pin-in{justify-content:flex-end;padding-bottom:9vh;padding-right:36vw}
+    .pin--wheel .pin-in{padding-right:6vw;padding-left:18vw}
+    .flow{padding-right:14vw}
+  }
+</style></head>
+<body>
+<canvas id="c" aria-hidden="true"></canvas>
+<main>
+  <header class="hero">
+    <h1>Jeremy Crooks</h1>
+    <p>Full-stack developer in Halifax, first year of computer science at Dalhousie, after a cyber security co-op.</p>
+  </header>
+  <section class="pin" id="pinA"><div class="pin-in"><div class="reveal" id="revealA">
+    <h2>Projects</h2>
+    <p>Three apps live, a fourth in progress.</p>
+  </div></div></section>
+  <section class="flow">
+    <article class="proj"><h3>Table4Two</h3>
+      <p>Two people swipe through nearby restaurants on their own phones. The first place both say yes to is the match.</p>
+      <p class="meta">Next.js · TypeScript · Supabase · Tailwind</p></article>
+    <article class="proj"><h3>Truecast</h3>
+      <p>Asks seven forecast models at once, surfaces the consensus, and shows where they disagree, so you can see how sure the forecast actually is.</p>
+      <p class="meta">Svelte 5 · TypeScript · Vite</p></article>
+    <article class="proj"><h3>Streetwear Storefront</h3>
+      <p>Filterable shop, product pages, and a cart that remembers what you added. A hand-built alternative to an off-the-shelf theme.</p>
+      <p class="meta">Next.js · TypeScript · Prisma · Tailwind</p></article>
+  </section>
+  <section class="pin pin--wheel" id="pinB"><div class="pin-in"><div class="reveal" id="revealB">
+    <h2>Contact</h2>
+    <p>Hiring for a security co-op? Let's talk.</p>
+    <div class="links">
+      <a href="mailto:jeremy@crookscodes.com">jeremy@crookscodes.com</a>
+      <a href="https://github.com/CrooksJeremy" target="_blank" rel="noreferrer">GitHub: @CrooksJeremy</a>
+      <a href="https://www.linkedin.com/in/jeremygcrooks" target="_blank" rel="noreferrer">LinkedIn: jeremygcrooks</a>
+    </div>
+  </div></div></section>
+</main>
+<div class="readout" id="read"></div>
+
+<script type="importmap">{"imports":{"three":"/node_modules/three/build/three.module.js"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import {GLTFLoader} from '/node_modules/three/examples/jsm/loaders/GLTFLoader.js';
+import {MeshoptDecoder} from '/node_modules/three/examples/jsm/libs/meshopt_decoder.module.js';
+
+const clamp01=x=>Math.min(1,Math.max(0,x));
+const ease=x=>{const t=clamp01(x);return t*t*(3-2*t)};
+// overshoots slightly at the end, like heavy metal seating against a stop
+const seat=x=>{const t=clamp01(x),c=1.15;return 1+(c+1)*Math.pow(t-1,3)+c*Math.pow(t-1,2)};
+const lerp=(a,b,t)=>a+(b-a)*t;
+
+const canvas=document.getElementById('c');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
+renderer.setClearColor(0x050505,1);
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFShadowMap;
+renderer.shadowMap.autoUpdate=false;
+
+const scene=new THREE.Scene();
+
+// what the metal reflects: a dark engine room with a few lamps
+const env=new THREE.Scene();
+env.add(new THREE.Mesh(new THREE.BoxGeometry(100,100,100),new THREE.MeshBasicMaterial({color:0x08090a,side:THREE.BackSide})));
+const lamp=(c,k,w,h,x,y,z)=>{const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({color:new THREE.Color(c).multiplyScalar(k),side:THREE.DoubleSide}));m.position.set(x,y,z);m.lookAt(0,0,0);env.add(m)};
+lamp(0xffe3c0,15,34,10,-26,30,28);
+lamp(0xbfd2e0,5,8,44,34,4,26);
+lamp(0xfff2e0,9,6,6,-6,-8,44);
+lamp(0xffefdc,.45,46,26,0,6,48);
+const pm=new THREE.PMREMGenerator(renderer);
+scene.environment=pm.fromScene(env,0.012).texture;
+scene.environmentIntensity=.8;
+pm.dispose();
+
+const camera=new THREE.PerspectiveCamera(18,1,10,500);
+const rig=new THREE.Group(), content=new THREE.Group();
+rig.add(content); scene.add(rig);
+
+// a raking lamp travels with the viewer; the fill lifts only painted surfaces, since metal ignores ambient light
+const key=new THREE.SpotLight(0xffeedd,4.4,0,.44,1,0);
+scene.add(key,key.target);
+scene.add(new THREE.AmbientLight(0xdfe6ea,1.0));
+// a second lamp sits on the current lock and is the only one with shadows; its map is redrawn only while the lock moves
+const lockLamp=new THREE.SpotLight(0xffeedd,3.2,0,.32,.9,0);
+lockLamp.castShadow=true; lockLamp.shadow.mapSize.set(1024,1024); lockLamp.shadow.bias=-.0004; lockLamp.shadow.normalBias=.02; lockLamp.shadow.radius=3;
+lockLamp.shadow.camera.near=20; lockLamp.shadow.camera.far=70;
+scene.add(lockLamp,lockLamp.target);
+
+// the door: leaf hung from a hinge off to the left
+const HINGE=-50, OPEN=30*Math.PI/180;
+const leafG=new THREE.Group(), leaf=new THREE.Group();
+leafG.position.x=HINGE; leaf.position.x=-HINGE; leafG.add(leaf); content.add(leafG);
+const armG=new THREE.Group(), wheelG=new THREE.Group(), rimG=new THREE.Group(), barsG=new THREE.Group(), keepsG=new THREE.Group();
+armG.position.set(-7,0,1.3); rimG.position.set(-8,0,3);
+wheelG.add(rimG,barsG); leaf.add(armG,wheelG); content.add(keepsG);
+
+// behind the door: a lit strip in the seam, a warm room, haze on the steel, a lamp for the metal to catch
+const seamMat=new THREE.MeshBasicMaterial({toneMapped:false});
+const seam=new THREE.Mesh(new THREE.PlaneGeometry(1.2,400),seamMat); seam.position.set(0,-120,-5.5); content.add(seam);
+const paint=(w,h,f)=>{const x=document.createElement('canvas');x.width=w;x.height=h;f(x.getContext('2d'));const t=new THREE.CanvasTexture(x);t.colorSpace=THREE.SRGBColorSpace;return t};
+const roomMat=new THREE.MeshBasicMaterial({toneMapped:false,color:0x000000,map:paint(128,128,g=>{const d=g.createRadialGradient(92,64,4,74,64,96);d.addColorStop(0,'#ffedd0');d.addColorStop(.3,'#f2c48c');d.addColorStop(.65,'#a86f3e');d.addColorStop(1,'#3d2615');g.fillStyle=d;g.fillRect(0,0,128,128)})});
+const room=new THREE.Mesh(new THREE.PlaneGeometry(150,150),roomMat); room.position.set(-40,0,-30); room.visible=false; content.add(room);
+const hazeMat=new THREE.MeshBasicMaterial({map:paint(128,2,g=>{const d=g.createLinearGradient(0,0,128,0);d.addColorStop(0,'rgba(255,190,120,0)');d.addColorStop(.4,'rgba(255,190,120,.05)');d.addColorStop(.485,'rgba(255,200,135,.3)');d.addColorStop(.5,'rgba(255,215,160,.55)');d.addColorStop(.515,'rgba(255,200,135,.3)');d.addColorStop(.6,'rgba(255,190,120,.05)');d.addColorStop(1,'rgba(255,190,120,0)');g.fillStyle=d;g.fillRect(0,0,128,2)}),transparent:true,depthWrite:false,toneMapped:false,blending:THREE.AdditiveBlending,opacity:0});
+const haze=new THREE.Mesh(new THREE.PlaneGeometry(16,400),hazeMat); haze.position.set(0,-120,.6); content.add(haze);
+const seamLight=new THREE.PointLight(0xffd8a6,0,40,1.5); seamLight.position.set(.1,0,3.6); content.add(seamLight);
+
+// rivets: one small mesh drawn many times in a single call
+function rivets(parent,sign,mat){
+  const spots=[];
+  for(let y=66;y>-318;y-=4.6) spots.push([sign*1.8,y,.7]);          // down the coaming
+  for(let w=22;w>-320;w-=44) for(let x=6;x<60;x+=4.6) spots.push([sign*x,w,.34]);   // along each strap
+  const geo=new THREE.SphereGeometry(.46,12,6,0,Math.PI*2,0,Math.PI/2).rotateX(Math.PI/2);
+  const m=new THREE.InstancedMesh(geo,mat,spots.length),t=new THREE.Matrix4();
+  spots.forEach(([x,y,z],i)=>{t.makeScale(1,1,.7);t.setPosition(x,y,z);m.setMatrixAt(i,t)});
+  m.instanceMatrix.needsUpdate=true;
+  parent.add(m);
+}
+
+let phone=false,pA=0,lA=1,pB=0,lB=1,viewH=1,ready=false,raf=0,wheelY=-100;
+const pinA=document.getElementById('pinA'),pinB=document.getElementById('pinB'),revA=document.getElementById('revealA'),revB=document.getElementById('revealB'),readEl=document.getElementById('read');
+const heightUnits=()=>phone?46:26;
+const lockOff=()=>phone?-.27:0;
+
+// frame cost follows pixel count, so the canvas gets a pixel budget rather than the screen's full density
+const BUDGETS=[1.7e6,1.2e6,.85e6];
+const keepQuality=new URLSearchParams(location.search).has('keep');
+let tier=0,frames=[],lastDraw=0,fps=0,lastLock='',lastText='',lastA=-1,lastB=-1;
+function applyResolution(){
+  renderer.setPixelRatio(Math.min(devicePixelRatio||1,Math.sqrt(BUDGETS[tier]/Math.max(1,innerWidth*innerHeight))));
+  renderer.setSize(innerWidth,innerHeight,false);
+}
+function watchFrames(now){
+  const d=now-lastDraw; lastDraw=now;
+  if(d>120) return;
+  frames.push(d);
+  if(frames.length<24) return;
+  const m=[...frames].sort((a,b)=>a-b)[12]; frames=[]; fps=Math.round(1000/m);
+  if(!keepQuality&&m>21&&tier<BUDGETS.length-1){tier++;applyResolution();}
+}
+function layout(){
+  viewH=innerHeight;
+  phone=matchMedia('(max-width:900px),(max-aspect-ratio:1/1)').matches;
+  applyResolution();
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  const a=pinA.getBoundingClientRect(),b=pinB.getBoundingClientRect();
+  pA=a.top+scrollY; lA=Math.max(1,a.height-viewH);
+  pB=b.top+scrollY; lB=Math.max(1,b.height-viewH);
+  // the wheel sits exactly where the viewer arrives when the second pin begins
+  wheelY=(pA-pB+lA)*heightUnits()/viewH;
+  wheelG.position.y=wheelY; keepsG.position.y=wheelY;
+  renderer.shadowMap.needsUpdate=true;
+  draw();
+}
+const leverParts=[],wheelParts=[];
+const opacity=(el,v,last)=>{if(v!==last){el.style.opacity=v;el.style.transform=`translateY(${(1-v)*16}px)`;el.style.pointerEvents=v>.5?'auto':'none'}return v};
+
+function draw(){
+  raf=0; if(!ready) return;
+  const y=scrollY;
+  const qA=clamp01((y-pA)/lA), qB=clamp01((y-pB)/lB);
+  // the door moves 1:1 with the page, except while pinned on a lock, so text reads as if it sits on the door
+  const travel=y-clamp01((y-pA)/lA)*lA-clamp01((y-pB)/lB)*lB;
+  const baseH=heightUnits();
+  const u=baseH/viewH;
+  const camY=(pA-travel)*u+lockOff()*baseH;
+
+  // lock 1: the lever lifts off its wedge
+  armG.rotation.z=(82*Math.PI/180)*seat((qA-.04)/.6);
+  // wheel: a long heavy spin, drawing the bars back; then the door lets go
+  rimG.rotation.z=-Math.PI*2*2.25*ease(qB/.58);
+  barsG.position.x=-5.6*ease((qB-.14)/.44);
+  const open=ease((qB-.58)/.34);
+  leafG.rotation.y=-OPEN*open*open;
+
+  const light=Math.max(.34*ease((qA-.3)/.4),ease((qB-.3)/.3));
+  const s=Math.sin(Math.PI*qA)+Math.sin(Math.PI*clamp01(qB/.58));
+  const h=baseH*(1-.06*s);
+  const dist=h/(2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2)));
+  // on a phone the seam slides aside after each lock so text gets the width, and to the far left for the contact text
+  const past=phone?ease((y-pA-lA)/(viewH*.5))-ease((y-pB+viewH*.5)/(viewH*.5)):0;
+  let frac=phone?.70+.23*clamp01(past):.40;
+  if(phone) frac=lerp(frac,.08,ease((qB-.6)/.25));
+  const w=h*camera.aspect;
+  const camX=(.5-frac)*w;
+  camera.position.set(camX,camY,dist);
+  camera.lookAt(camX,camY,0);
+  rig.position.set(-4,0,0); content.position.set(4,0,0);
+  rig.rotation.y=-.1*s;
+
+  seamMat.color.setRGB(.012+1.0*light,.01+.78*light,.008+.5*light);
+  hazeMat.opacity=light*.85; haze.visible=light>.004; haze.scale.x=1+open*2.6;   // the glow spreads as the door lets go
+  seamLight.intensity=44*light;
+  seamLight.position.y=camY;
+  room.visible=open>.002;
+  roomMat.color.setScalar(open);
+  room.position.y=camY;
+
+  key.position.set(-26,camY+17,27);
+  key.target.position.set(-1,camY-1.5,0);
+
+  // off screen, a lock costs nothing: not drawn, not lit, no shadow pass
+  const lever=Math.abs(camY)<h/2+16, wheel=Math.abs(camY-wheelY)<h/2+12;
+  leverParts.forEach(o=>{o.visible=lever}); wheelParts.forEach(o=>{o.visible=wheel});
+  const focus=wheel?wheelY:0;
+  lockLamp.position.set(-26,focus+17,27); lockLamp.target.position.set(-2,focus,0);
+  lockLamp.intensity=(lever||wheel)?3.2:0;
+  const sig=`${qA.toFixed(4)}|${qB.toFixed(4)}|${lever}|${wheel}`;
+  if((lever||wheel)&&sig!==lastLock) renderer.shadowMap.needsUpdate=true;
+  lastLock=sig;
+  watchFrames(performance.now());
+
+  lastA=opacity(revA,+ease((qA-.46)/.3).toFixed(3),lastA);
+  lastB=opacity(revB,+ease((qB-.66)/.26).toFixed(3),lastB);
+  const text=`${qB>=1?'Door open':qB>0?'Wheel':qA>=1?'Lever released':qA>0?'Lever':'Locked'}${fps?` · ${fps} fps · level ${tier+1}/3`:''}`;
+  if(text!==lastText){readEl.textContent=text;lastText=text}
+
+  renderer.render(scene,camera);
+}
+const wake=()=>{if(!raf)raf=requestAnimationFrame(draw)};
+
+new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load('steel.glb',g=>{
+  const M=g.scene;
+  const mount=(n,into,list,opts={})=>{
+    const o=M.getObjectByName(n); if(!o) throw new Error('missing '+n);
+    o.position.set(0,0,0);
+    o.traverse(x=>{
+      if(!x.isMesh) return;
+      x.castShadow=!opts.flat; x.receiveShadow=true;
+      if(opts.flat){ x.material=new THREE.MeshLambertMaterial({map:x.material.map,color:new THREE.Color(6.2,6.2,6.2)}); }
+    });
+    if(list) list.push(o);
+    into.add(o);
+    return o;
+  };
+  mount('jamb',content,null,{flat:true});
+  mount('leafDoor',leaf,null,{flat:true});
+  mount('frameDoor',content,null,{flat:true});
+  mount('leverBase',leaf,leverParts);
+  mount('leverArm',armG,leverParts);
+  mount('wedge',content,leverParts);
+  mount('wheelPlate',wheelG,wheelParts);
+  mount('wheelRim',rimG,wheelParts);
+  mount('bars',barsG,wheelParts);
+  mount('keeps',keepsG,wheelParts);
+  const rivetMat=new THREE.MeshLambertMaterial({color:0x363b3e});
+  rivets(leaf,-1,rivetMat); rivets(content,1,rivetMat);
+  ready=true; layout(); document.body.dataset.ready='1';
+});
+addEventListener('scroll',wake,{passive:true});
+addEventListener('resize',layout);
+layout();
+</script>
+</body></html>

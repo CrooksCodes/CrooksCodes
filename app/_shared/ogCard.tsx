@@ -2,7 +2,7 @@ import { ImageResponse } from "next/og";
 import { person } from "./content";
 
 /**
- * The share card: the drawing sheet's title block, in the site's own palette.
+ * The share card: a block of facts, in the site's own palette.
  * Used by both opengraph-image and twitter-image.
  */
 export const OG_SIZE = { width: 1200, height: 630 };
@@ -39,7 +39,7 @@ export async function renderOgCard() {
       >
         <div style={{ display: "flex", flex: 1, border: `2px solid ${INK}`, padding: "44px 52px 40px", flexDirection: "column", justifyContent: "space-between", position: "relative" }}>
           <div style={{ display: "flex", justifyContent: "space-between", ...label }}>
-            <span>CrooksCodes · DWG CC-2026 · Sheet 1 of 1</span>
+            <span>CrooksCodes · crookscodes.com</span>
             <span>Halifax, Nova Scotia</span>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 30, marginBottom: 24 }}>
@@ -51,8 +51,8 @@ export async function renderOgCard() {
             </div>
           </div>
           <div style={{ display: "flex", border: `2px solid ${INK}`, background: INK, gap: 2 }}>
-            <div style={{ ...cell, flex: 1 }}><span style={label}>Drawn by</span><span style={{ fontSize: 24 }}>{person.name}</span></div>
-            <div style={{ ...cell, flex: 1 }}><span style={label}>Shipped</span><span style={{ fontSize: 24 }}>Four web apps, three live</span></div>
+            <div style={{ ...cell, flex: 1 }}><span style={label}>Looking for</span><span style={{ fontSize: 24 }}>Cyber security co-op</span></div>
+            <div style={{ ...cell, flex: 1 }}><span style={label}>Built</span><span style={{ fontSize: 24 }}>Three web apps live, one in progress</span></div>
             <div style={{ ...cell, flex: 1, color: RED }}><span style={{ ...label, color: RED }}>Contact</span><span style={{ fontSize: 24 }}>{person.email}</span></div>
           </div>
           <div style={{ position: "absolute", right: 52, top: 96, width: 2, height: 120, background: RULE, display: "flex" }} />

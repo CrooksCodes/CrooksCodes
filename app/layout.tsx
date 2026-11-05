@@ -16,21 +16,21 @@ const barlowCondensed = Barlow_Condensed({
   weight: ["500", "600", "700"],
 });
 
-const CONTRACT = `<!--
+/*
 IMPECCABLE DIRECTION CONTRACT · seed b33fbed3 · surface /
-THESIS: The portfolio as a locksmith's drawing sheet whose figure is a lit model of one door with five locks on its seam. It refuses the dark hacker page: a white sheet, ink lettering, real brass. Each block releases one lock, top to bottom, and the block itself unlocks with it; the door opens at the end.
-OWN-WORLD: Sheet #F7F7F5, ink #1A1C1F, red #D23B2E only for the contact action and the seam. The figure is rendered, not drawn: lit brass (#c9a24d, metal, roughness 0.3) and satin steel hardware with screw heads, a painted panel leaf, a timber jamb, soft shadows under a room environment; the sheet's ink balloons on leader lines sit over it. The camera travels: wide on the whole door, close on the lock being worked, wide and stepped to the hinge side as the door opens. Barlow for text, Barlow Condensed for drawing titles, labels and tables, tabular numerals. Sheet border with zone marks, title block, balloon callouts on leader lines, lock schedule, revision table, parts list.
-STORY: A hiring manager sees a precise section with Jeremy as draughtsman, reads a claim honest about year 1 and the cyber security co-op he wants, scrolls as the barrel bolt, deadbolt, chain, hasp and hook release one block at a time, and at contact the door swings open and the red action is right there.
-FIRST VIEWPORT: Sheet border and zone marks frame the viewport; the 3D door and jamb elevation with its five locks owns the right 55% at drawing scale; left: the name as the drawing title, the claim, the red action, and a Drawn by / Location / Status / Looking for block.
+THESIS: The portfolio as a drawing sheet whose figure is a hand-pressed clay door with five locks on its seam. It refuses the dark hacker page: a pale sheet, ink lettering, a slate door with brass and pewter hardware. Each section releases one lock as it comes into view; at Contact the door opens on warm light.
+OWN-WORLD: Sheet #F7F7F5, ink #1A1C1F, red #D23B2E only for the contact action and the seam. The figure is a matte clay model from Blender on a boxless full-bleed canvas behind opaque paper panels. Sheet border and zone marks stay as texture; every label and heading uses plain words (About, Projects, Skills, Experience, Education, Contact). Barlow for text, Barlow Condensed for titles, labels and tables, tabular numerals.
+STORY: A hiring manager sees the door, the name, an honest claim about year 1 and the co-op, and how to reach Jeremy, all in one screen. Scrolling releases one lock per section without ever hiding what they came to read, and at Contact the door swings open beside the form.
+FIRST VIEWPORT: Sheet border and zone marks frame the viewport; the whole door owns the right half; left: the name, the claim, the red action, and Email / GitHub / LinkedIn / Looking for.
 FORM: Lock cutaway, pick card (candidate 1 of 7), re-roll hand 1, seed key b33fbed3.
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
--->`;
+*/
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://crookscodes.com";
 const siteName = "CrooksCodes";
 const title = "Jeremy Crooks · Halifax · CrooksCodes";
 const description =
-  "Jeremy Crooks, full-stack developer in Halifax and first-year computer science student at Dalhousie, looking for a cyber security co-op. Four shipped web apps, drawn as a door with five locks.";
+  "Jeremy Crooks, full-stack developer in Halifax and first-year computer science student at Dalhousie, looking for a cyber security co-op. Three web apps live, a fourth in progress.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -105,7 +105,6 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <div className="lock-root">
-          <div hidden dangerouslySetInnerHTML={{ __html: CONTRACT }} />
           {children}
         </div>
       </body>

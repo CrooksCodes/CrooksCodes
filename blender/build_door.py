@@ -1,105 +1,85 @@
-"""Builds the door and its five locks, then exports public/models/door.glb.
+"""Builds the door and its five locks, then exports a GLB.
 
-Run headless:  blender --background --python blender/build_door.py -- <out.glb> <out.blend> [preview.png]
+Run headless:  blender --background --python blender/build_door.py -- <out.glb> <out.blend>
+
+A designed object rather than a replica: plaster door, aged brass, slim frame.
+Soft edges and no surface texture, with restrained proportions so it stays adult.
 
 Geometry is authored in the web scene's coordinates (x right, y up, z toward the
 viewer, drawing units as in app/lockSpec.ts) and rotated into Blender's Z-up on
-the way out, so the exported nodes land exactly where LockScene expects them.
-Every moving part is its own object with its origin on its pivot.
+the way out. Every moving part is its own object with its origin on its pivot.
 """
-import math, random, sys
+import math, sys
 import bpy, bmesh
-import numpy as np
 from mathutils import Matrix, Vector, noise as mnoise
 
 argv = sys.argv[sys.argv.index("--") + 1:]
 OUT_GLB, OUT_BLEND = argv[0], argv[1]
-OUT_PREVIEW = argv[2] if len(argv) > 2 else None
 
-Y = {"L1": 16, "L2": 8, "L3": 0, "L4": -8, "L5": -16}   # lockSpec.ts
+Y = {"L1": 16.5, "L2": 8, "L3": 0, "L4": -7, "L5": -17}   # lockSpec.ts
 TOP, BOTTOM = 22, -22
-FACE = 0.6                                               # the door's front plane
-rng = random.Random(7)
+Z = 1.4   # the leaf's front plane
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 
-# ── clay surface: a tileable normal map of thumb dents and fine grain ─────────
-def noise(n, su, sv, seed):
-    g = np.random.default_rng(seed).normal(size=(n, n))
-    fu, fv = np.fft.fftfreq(n)[None, :], np.fft.fftfreq(n)[:, None]
-    f = np.fft.ifft2(np.fft.fft2(g) * np.exp(-((fu * su) ** 2 + (fv * sv) ** 2))).real
-    return (f - f.min()) / (f.max() - f.min())
+def srgb(h):
+    c = [int(h[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+    return tuple(v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4 for v in c)
 
-N = 512
-height = noise(N, 60, 60, 1) * 7.0 + noise(N, 14, 14, 2) * 0.8 + noise(N, 2.2, 2.2, 3) * 0.12
-gy, gx = np.gradient(height)
-nrm = np.stack([-gx * 12, -gy * 12, np.ones((N, N))], axis=2)
-nrm /= np.linalg.norm(nrm, axis=2, keepdims=True)
-px = np.concatenate([nrm * 0.5 + 0.5, np.ones((N, N, 1))], axis=2).astype(np.float32)
-clay_img = bpy.data.images.new("clay_normal", N, N, alpha=False)
-clay_img.colorspace_settings.name = "Non-Color"
-clay_img.pixels.foreach_set(px.ravel())
-clay_img.pack()
-
-def material(name, color, rough=0.6):
-    """Matte clay: no metal anywhere, the reading of brass and pewter is colour alone."""
+def material(name, hex_color, rough, metal=0.0):
     m = bpy.data.materials.new(name)
     m.use_nodes = True
-    nt = m.node_tree
-    p = next(n for n in nt.nodes if n.type == "BSDF_PRINCIPLED")
-    p.inputs["Base Color"].default_value = (*color, 1)
+    p = next(n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+    p.inputs["Base Color"].default_value = (*srgb(hex_color), 1)
     p.inputs["Roughness"].default_value = rough
-    p.inputs["Metallic"].default_value = 0.0
-    t = nt.nodes.new("ShaderNodeTexImage"); t.image = clay_img
-    n = nt.nodes.new("ShaderNodeNormalMap"); n.inputs["Strength"].default_value = 0.14
-    nt.links.new(t.outputs["Color"], n.inputs["Color"])
-    nt.links.new(n.outputs["Normal"], p.inputs["Normal"])
+    p.inputs["Metallic"].default_value = metal
     return m
 
 MATS = [
-    material("brass", (0.578, 0.328, 0.078), 0.46),   # #C89B4F
-    material("pewter", (0.323, 0.366, 0.407)),        # #9AA3AB
-    material("slate", (0.061, 0.087, 0.114)),         # #46535F door
-    material("frame", (0.027, 0.038, 0.051)),         # #2E3740 jamb, lintel, sill, post
-    material("dark", (0.007, 0.009, 0.012)),          # #14181C slots and recesses
-    material("red", (0.644, 0.044, 0.027)),           # #D23B2E the seam
+    material("plaster", "E8E1D3", 0.8),        # the leaf
+    material("stone", "D2CABA", 0.84),         # the frame
+    material("brass", "BC955A", 0.42, 0.55),   # what moves
+    material("bronze", "6E5A42", 0.55, 0.35),  # what stays
+    material("dark", "2B221A", 0.9),           # slots and the keyhole
 ]
-BRASS, STEEL, PAINT, TIMBER, DARK, RED = range(6)
-UV_SCALE = {m: 9 for m in range(6)}
+CREAM, SAND, BRASS, BRONZE, DARK = range(5)
 
-# ── mesh pieces ───────────────────────────────────────────────────────────────
-def finish(bm, mat, along="x"):
-    """Material, smooth flag and box-mapped UVs. `along` is the grain direction."""
+# ── soft forms ────────────────────────────────────────────────────────────────
+def finish(bm, mat):
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    uv = bm.loops.layers.uv.verify()
-    s = UV_SCALE[mat]
     for f in bm.faces:
         f.material_index = mat
         f.smooth = True
-        n = f.normal
-        ax = max(range(3), key=lambda i: abs(n[i]))
-        for l in f.loops:
-            c = l.vert.co
-            a, b = {0: (c.z, c.y), 1: (c.x, c.z), 2: (c.x, c.y)}[ax]
-            # streaks in the textures run along v, so the grain axis goes on v
-            grain_first = (along == "x" and ax != 0) or (along == "y" and ax == 0)
-            l[uv].uv = (b / s, a / s) if grain_first else (a / s, b / s)
     return bm
 
-def box(w, h, d, x, y, z0, mat, r=0.18, seg=2, along="x"):
-    """Rounded block centred at (x, y) with its back face at z0."""
+def rbox(w, h, d, x, y, z0, mat, r=0.6, puff=0.0, cuts=7):
+    """A true rounded box, centred at (x, y), back face at z0, optionally swollen on its face."""
     bm = bmesh.new()
-    bmesh.ops.create_cube(bm, size=1)
-    bmesh.ops.scale(bm, vec=(w, h, d), verts=bm.verts)
-    r = min(r * 1.7, w * 0.49, h * 0.49, d * 0.49)
-    seg = max(seg, 3)
-    bmesh.ops.bevel(bm, geom=list(bm.verts) + list(bm.edges), offset=r, offset_type="OFFSET", segments=seg, profile=0.5, affect="EDGES", clamp_overlap=True)
-    bmesh.ops.translate(bm, vec=(x, y, z0 + d / 2), verts=bm.verts)
-    return finish(bm, mat, along)
+    bmesh.ops.create_cube(bm, size=2)
+    bmesh.ops.subdivide_edges(bm, edges=list(bm.edges), cuts=cuts, use_grid_fill=True)
+    half = (w / 2, h / 2, d / 2)
+    r = min(r, *[v * 0.98 for v in half])
+    inner = [v - r for v in half]
+    for v in bm.verts:
+        o = list(v.co)
+        pos = []
+        for i in range(3):
+            u = o[i]
+            # half the rows go to the rounded corners, so curves stay smooth on long sides
+            a = abs(u)
+            c = a / 0.5 * inner[i] if a < 0.5 else inner[i] + (a - 0.5) / 0.5 * r
+            pos.append(math.copysign(c, u))
+        p = [max(-inner[i], min(inner[i], pos[i])) for i in range(3)]
+        n = Vector([pos[i] - p[i] for i in range(3)])
+        q = Vector(p) + (n.normalized() * r if n.length > 1e-6 else Vector((0, 0, 0)))
+        if puff and q.z > 0:
+            q.z += puff * max(0, 1 - (q.x / half[0]) ** 2) * max(0, 1 - (q.y / half[1]) ** 2)
+        v.co = q + Vector((x, y, z0 + d / 2))
+    return finish(bm, mat)
 
 AXIS = {"z": Matrix.Identity(3), "x": Matrix.Rotation(math.pi / 2, 3, "Y"), "y": Matrix.Rotation(-math.pi / 2, 3, "X")}
 
-def lathe(profile, center, axis, mat, seg=32, closed=False, along="x"):
+def lathe(profile, center, axis, mat, seg=40, closed=False):
     """Spins (radius, height) points about an axis. Open profiles are capped."""
     bm = bmesh.new()
     rings = [[bm.verts.new((r * math.cos(2 * math.pi * i / seg), r * math.sin(2 * math.pi * i / seg), h)) for i in range(seg)] for r, h in profile]
@@ -113,19 +93,45 @@ def lathe(profile, center, axis, mat, seg=32, closed=False, along="x"):
         bm.faces.new(rings[0]); bm.faces.new(rings[-1])
     bmesh.ops.transform(bm, matrix=AXIS[axis].to_4x4(), verts=bm.verts)
     bmesh.ops.translate(bm, vec=center, verts=bm.verts)
-    return finish(bm, mat, along)
+    return finish(bm, mat)
 
-def cyl(r, length, center, axis, mat, chamfer=0.06, seg=32, along="x"):
-    c, h = min(chamfer, r * 0.4, length * 0.4), length / 2
-    return lathe([(r - c, -h), (r, -h + c), (r, h - c), (r - c, h)], center, axis, mat, seg, along=along)
+def pill(r, length, center, axis, mat, end=None, seg=40):
+    """A cylinder with fully rounded ends."""
+    e = min(end if end is not None else r * 0.75, r, length / 2)
+    h = length / 2
+    prof = [(max(0.001, (r - e) + e * math.sin(a * math.pi / 16)), -h + e - e * math.cos(a * math.pi / 16)) for a in range(9)]
+    prof += [(max(0.001, (r - e) + e * math.sin(a * math.pi / 16)), h - e + e * math.cos(a * math.pi / 16)) for a in range(8, -1, -1)]
+    return lathe(prof, center, axis, mat, seg)
 
-def sleeve(inner, outer, x0, x1, y, z, mat):
-    """A hollow guide the barrel runs through."""
-    c = 0.08
-    return lathe([(inner, x0), (outer - c, x0), (outer, x0 + c), (outer, x1 - c), (outer - c, x1), (inner, x1)], (0, y, z), "x", mat, closed=True, seg=36)
+def collar(inner, outer, x0, x1, y, z, mat):
+    """A fat hollow guide that a bolt runs through."""
+    c = (outer - inner) / 2
+    m = (inner + outer) / 2
+    prof = [(m + c * math.cos(a), (x0 + c) - c * math.sin(a)) for a in [math.pi * i / 8 for i in range(9)]]
+    prof += [(m - c * math.cos(a), (x1 - c) + c * math.sin(a)) for a in [math.pi * i / 8 for i in range(9)]]
+    return lathe(prof, (0, y, z), "x", mat, closed=True, seg=44)
 
-def tube(points, r, mat, closed=False, seg=12, along="x"):
-    """Sweeps a round wire along a polyline, keeping its frame from twisting."""
+def sweep(points, section, mat, closed=True):
+    """Sweeps a section of (u, z) points along a path in the XY plane."""
+    pts = [Vector(p) for p in points]
+    n, m = len(pts), len(section)
+    bm = bmesh.new()
+    rings = []
+    for i in range(n):
+        a = pts[(i - 1) % n] if (closed or i > 0) else pts[i]
+        b = pts[(i + 1) % n] if (closed or i < n - 1) else pts[i]
+        t = (b - a).normalized()
+        o = Vector((-t.y, t.x))
+        rings.append([bm.verts.new((pts[i].x + o.x * u, pts[i].y + o.y * u, z)) for u, z in section])
+    for i in range(n if closed else n - 1):
+        a, b = rings[i], rings[(i + 1) % n]
+        for k in range(m):
+            j = (k + 1) % m
+            bm.faces.new((a[k], a[j], b[j], b[k]))
+    return finish(bm, mat)
+
+def tube(points, r, mat, closed=False, seg=16):
+    """Round wire along a 3D path, ends domed by shrinking the last rings."""
     pts = [Vector(p) for p in points]
     n = len(pts)
     tan = []
@@ -147,57 +153,43 @@ def tube(points, r, mat, closed=False, seg=12, along="x"):
             bm.faces.new((a[k], a[m], b[m], b[k]))
     if not closed:
         bm.faces.new(rings[0]); bm.faces.new(rings[-1])
-    return finish(bm, mat, along)
+    return finish(bm, mat)
 
 def arc(cx, cy, R, a0, a1, n, z=0.0):
     return [(cx + R * math.cos(a0 + (a1 - a0) * i / n), cy + R * math.sin(a0 + (a1 - a0) * i / n), z) for i in range(n + 1)]
 
-def moulding(x0, y0, x1, y1, profile, mat, cap=True):
-    """Sweeps (inset, z) points around a rectangle with mitred corners; caps the field."""
-    bm = bmesh.new()
-    rows = [[bm.verts.new((px, py, z)) for px, py in ((x0 + i, y0 + i), (x1 - i, y0 + i), (x1 - i, y1 - i), (x0 + i, y1 - i))] for i, z in profile]
-    for a, b in zip(rows, rows[1:]):
-        for k in range(4):
-            m = (k + 1) % 4
-            bm.faces.new((a[k], a[m], b[m], b[k]))
-    if cap: bm.faces.new(rows[-1])
-    finish(bm, mat)
-    for f in bm.faces:
-        if f.normal.z < 0: f.normal_flip()
-    return bm
+def ring(cx, cy, z, R, r, mat):
+    return tube(arc(cx, cy, R, 0, 2 * math.pi * 31 / 32, 31, z), r, mat, closed=True)
 
-def screw(x, y, z):
-    """A slotted countersunk head, each one turned to its own angle."""
-    a = lathe([(0.34, 0), (0.34, 0.07), (0.27, 0.17), (0, 0.19)], (x, y, z), "z", STEEL, seg=18)
-    slot = box(0.56, 0.09, 0.05, 0, 0, 0, DARK, r=0.01, seg=1)
-    bmesh.ops.rotate(slot, cent=(0, 0, 0), matrix=Matrix.Rotation(rng.uniform(0, math.pi), 3, "Z"), verts=slot.verts)
-    bmesh.ops.translate(slot, vec=(x, y, z + 0.155), verts=slot.verts)
-    return [a, slot]
+def rounded_rect(x0, y0, x1, y1, R, step=2.5):
+    """A closed path around a rectangle with round corners."""
+    out = []
+    def line(ax, ay, bx, by):
+        k = max(1, int(math.hypot(bx - ax, by - ay) / step))
+        out.extend((ax + (bx - ax) * i / k, ay + (by - ay) * i / k) for i in range(k))
+    def corner(cx, cy, a):
+        out.extend((cx + R * math.cos(a + math.pi / 2 * i / 10), cy + R * math.sin(a + math.pi / 2 * i / 10)) for i in range(10))
+    line(x0 + R, y0, x1 - R, y0); corner(x1 - R, y0 + R, -math.pi / 2)
+    line(x1, y0 + R, x1, y1 - R); corner(x1 - R, y1 - R, 0)
+    line(x1 - R, y1, x0 + R, y1); corner(x0 + R, y1 - R, math.pi / 2)
+    line(x0, y1 - R, x0, y0 + R); corner(x0 + R, y0 + R, math.pi)
+    return out
 
 # ── parts: each exported node ─────────────────────────────────────────────────
 TO_BLENDER = Matrix(((1, 0, 0), (0, 0, -1), (0, 1, 0)))
 col = bpy.data.collections.new("door"); bpy.context.scene.collection.children.link(col)
 
-def hand_shape(bm, amp, cell):
-    """Breaks up the long edges, then pushes the surface in and out as fingers would."""
-    for _ in range(5):
-        long_edges = [e for e in bm.edges if e.calc_length() > cell]
-        if not long_edges: break
-        bmesh.ops.subdivide_edges(bm, edges=long_edges, cuts=1, use_grid_fill=True)
-    bm.normal_update()
-    for v in bm.verts:
-        c = v.co
-        n = mnoise.noise(c * 0.22) + 0.4 * mnoise.noise(c * 0.8 + Vector((7, 3, 1)))
-        v.co = c + v.normal * n * amp
-
-def part(name, pieces, pivot=(0, 0, 0), amp=0.02, cell=2.6):
+def part(name, pieces, pivot=(0, 0, 0), amp=0.05):
+    """Merges pieces, nudges them very slightly out of true so nothing looks machined, and exports on the pivot."""
     flat = []
     for p in pieces:
         flat.extend(p if isinstance(p, list) else [p])
     bm = bmesh.new()
     for p in flat:
         t = bpy.data.meshes.new("_t"); p.to_mesh(t); bm.from_mesh(t); bpy.data.meshes.remove(t); p.free()
-    hand_shape(bm, amp, cell)
+    bm.normal_update()
+    for v in bm.verts:
+        v.co += v.normal * mnoise.noise(v.co * 0.16) * amp
     pv = Vector(pivot)
     bmesh.ops.translate(bm, vec=-pv, verts=bm.verts)
     bmesh.ops.transform(bm, matrix=TO_BLENDER.to_4x4(), verts=bm.verts)
@@ -209,172 +201,125 @@ def part(name, pieces, pivot=(0, 0, 0), amp=0.02, cell=2.6):
     col.objects.link(ob)
     return ob
 
-def carve(target, cutter):
-    """Exact boolean between two pieces, back to a bmesh."""
-    def ob(bm, n):
-        me = bpy.data.meshes.new(n); bm.to_mesh(me); bm.free()
-        o = bpy.data.objects.new(n, me); bpy.context.scene.collection.objects.link(o)
-        return o
-    a, c = ob(target, "_a"), ob(cutter, "_c")
-    mod = a.modifiers.new("cut", "BOOLEAN"); mod.operation = "DIFFERENCE"; mod.solver = "EXACT"; mod.object = c
-    dg = bpy.context.evaluated_depsgraph_get()
-    out = bmesh.new(); out.from_object(a, dg)
-    for o in (a, c):
-        me = o.data; bpy.data.objects.remove(o); bpy.data.meshes.remove(me)
-    return out
+# ── the frame: one fat ring, then what is fixed to it ─────────────────────────
+FW, FD = 4.5, 4.0       # frame width and depth
+FZ = -0.4               # the frame's centre depth
+R_SEC = 0.95
+section = []
+for cx, cz, a in ((FW / 2 - R_SEC, FD / 2 - R_SEC, 0), (-FW / 2 + R_SEC, FD / 2 - R_SEC, math.pi / 2), (-FW / 2 + R_SEC, -FD / 2 + R_SEC, math.pi), (FW / 2 - R_SEC, -FD / 2 + R_SEC, 3 * math.pi / 2)):
+    section += [(cx + R_SEC * math.cos(a + math.pi / 2 * i / 6), FZ + cz + R_SEC * math.sin(a + math.pi / 2 * i / 6)) for i in range(7)]
+frame = [sweep(rounded_rect(-2.25, BOTTOM - 2.25, 32.25, TOP + 2.25, 3.2), section, SAND)]
+KP = -2.25   # centre of the lock-side post
 
-# ── the frame: boarded jamb, lintel, sill, hinge post ────────────────────────
-jamb = [
-    box(4.8, TOP - BOTTOM, 4, -11.6, 0, -4, TIMBER, 0.14, along="y"),
-    box(4.6, TOP - BOTTOM, 4, -6.9, 0, -4, TIMBER, 0.14, along="y"),
-    box(4.6, TOP - BOTTOM, 4, -2.3, 0, -4, TIMBER, 0.14, along="y"),
-    box(48, 2.4, 4.6, 10, TOP + 1.2, -4, TIMBER, 0.2),
-    box(48, 2.4, 4.6, 10, BOTTOM - 1.2, -4, TIMBER, 0.2),
-    box(3.4, TOP - BOTTOM, 4, 32.3, 0, -4, TIMBER, 0.14, along="y"),
+PLATE = 1.6   # the frame's front plane
+BAR_Z = 3.1   # the barrel's centreline
+frame += [
+    # 1 · barrel keep
+    rbox(3.7, 4.6, 0.5, KP, Y["L1"], PLATE - 0.08, BRONZE, 0.24, 0.06),
+    collar(1.22, 1.72, KP - 1.5, KP + 1.2, Y["L1"], BAR_Z, BRONZE),
+    # 2 · strike with its slot
+    rbox(3.6, 5.2, 0.55, KP, Y["L2"], PLATE - 0.08, BRONZE, 0.27, 0.06),
+    rbox(2.1, 2.7, 0.18, KP + 0.2, Y["L2"], PLATE + 0.38, DARK, 0.08),
+    # 3 · chain anchor
+    rbox(3.6, 3.6, 0.5, KP, Y["L3"], PLATE - 0.08, BRONZE, 0.24, 0.06),
+    # 4 · staple plate
+    rbox(3.6, 4.4, 0.5, KP, Y["L4"], PLATE - 0.08, BRONZE, 0.24, 0.06),
+    # 5 · eye
+    pill(1.4, 0.5, (KP, Y["L5"] - 0.2, PLATE + 0.1), "z", BRONZE),
+    ring(KP, Y["L5"] - 0.2, PLATE + 0.65, 0.85, 0.26, BRONZE),
 ]
-jamb.append(box(0.6, TOP - BOTTOM, 0.3, 0.3, 0, -0.1, RED, 0.08))   # the seam
-for hy in (14, 0, -14):   # butt hinges: the knuckles stay with the frame
-    jamb.append(cyl(0.55, 4.2, (30.05, hy, 0.15), "y", BRASS, along="y"))
-    jamb.append(box(1.6, 4, 0.14, 31.0, hy, 0, BRASS, 0.05))
+for hy in (15, 0, -15):   # butt hinges; the knuckles stay with the frame
+    frame.append(pill(0.72, 4.6, (30.12, hy, PLATE + 0.1), "y", BRASS))
+    frame.append(rbox(2.3, 3.8, 0.34, 31.3, hy, PLATE - 0.06, BRONZE, 0.14, 0.02))
+part("jamb", frame, amp=0.04)
 
-# 1 · barrel bolt keep, 2 · strike, 3 · chain anchor, 4 · staple plate, 5 · screw eye
-jamb += [
-    box(6, 3.4, 0.5, -4, Y["L1"], 0, STEEL), box(3.2, 1.8, 0.8, -4, Y["L1"], 0.4, STEEL, 0.1),
-    sleeve(1.03, 1.4, -5.6, -2.4, Y["L1"], 2.0, STEEL),
-    screw(-6.4, Y["L1"] + 1.1, 0.5), screw(-1.6, Y["L1"] - 1.1, 0.5),
-    box(4, 6, 0.8, -3, Y["L2"], 0, STEEL), box(2.5, 2.2, 0.14, -2.6, Y["L2"], 0.76, DARK, 0.04),
-    screw(-3, Y["L2"] + 2.3, 0.8), screw(-3, Y["L2"] - 2.3, 0.8),
-    box(4, 4, 0.6, -3.5, Y["L3"], 0, STEEL), screw(-4.7, Y["L3"] + 1.3, 0.6), screw(-4.7, Y["L3"] - 1.3, 0.6),
-    box(3.2, 3.8, 0.4, -2.5, Y["L4"], 0, STEEL), screw(-3.6, Y["L4"] + 1.5, 0.4), screw(-1.4, Y["L4"] - 1.5, 0.4),
-    tube([(-2.5, Y["L4"] + 1.3 * math.cos(a), 1.0 + 1.3 * math.sin(a)) for a in [i * 2 * math.pi / 28 for i in range(28)]], 0.27, STEEL, closed=True),
-    cyl(0.9, 0.3, (-1.6, Y["L5"] - 0.9, 0.15), "z", STEEL),
-    cyl(0.2, 0.6, (-1.6, Y["L5"] - 0.9, 0.3), "z", STEEL, 0.02, 12),
-    tube([(-1.6 + 0.7 * math.cos(a), Y["L5"] - 0.9, 1.2 + 0.7 * math.sin(a)) for a in [i * 2 * math.pi / 24 for i in range(24)]], 0.17, STEEL, closed=True),
-]
-part("jamb", jamb, amp=0.05, cell=3.6)
-
-# ── the leaf: a heavy lock stile, rails, two fielded panels ──────────────────
-PX0, PX1 = 14.2, 26.6
-panel_profile = [(0, FACE), (0.45, 0.05), (0.75, -0.6), (1.25, -0.6), (2.5, 0.2)]
+# ── the leaf: a slab with two quiet fielded panels, and what is fixed to it ───
 leaf = [
-    box(29.4, TOP - BOTTOM, 2, 15.3, 0, -3, PAINT, 0.12),
-    box(PX0 - 0.6, TOP - BOTTOM, FACE + 1, (0.6 + PX0) / 2, 0, -1, PAINT, 0.12),
-    box(30 - PX1, TOP - BOTTOM, FACE + 1, (PX1 + 30) / 2, 0, -1, PAINT, 0.12),
-    box(PX1 - PX0, 3.5, FACE + 1, (PX0 + PX1) / 2, TOP - 1.75, -1, PAINT, 0.08),
-    box(PX1 - PX0, 3.5, FACE + 1, (PX0 + PX1) / 2, BOTTOM + 1.75, -1, PAINT, 0.08),
-    box(PX1 - PX0, 5, FACE + 1, (PX0 + PX1) / 2, 0, -1, PAINT, 0.08),
-    moulding(PX0, 2.5, PX1, TOP - 3.5, panel_profile, PAINT),
-    moulding(PX0, BOTTOM + 3.5, PX1, -2.5, panel_profile, PAINT),
+    rbox(29.2, 43.4, 3.0, 15.2, 0, -1.6, CREAM, 0.72, 0.3, cuts=15),
+    rbox(10.0, 15.6, 1.0, 21, 10.2, Z - 0.1, CREAM, 0.46, 0.42, cuts=10),
+    rbox(10.0, 15.6, 1.0, 21, -10.2, Z - 0.1, CREAM, 0.46, 0.42, cuts=10),
+    # 1 · barrel backplate and two guides
+    rbox(12.6, 4.6, 0.5, 6.7, Y["L1"], Z - 0.05, BRONZE, 0.24, 0.06),
+    collar(1.22, 1.72, 1.0, 2.2, Y["L1"], BAR_Z, BRONZE), collar(1.22, 1.72, 10.6, 11.8, Y["L1"], BAR_Z, BRONZE),
+    # 2 · deadbolt case
+    rbox(11.0, 5.2, 1.9, 7.4, Y["L2"], Z - 0.05, BRONZE, 0.82, 0.16),
+    # 3 · chain track with its slot
+    rbox(10.0, 3.0, 0.6, 6.6, Y["L3"], Z - 0.05, BRONZE, 0.27, 0.06),
+    rbox(8.0, 0.95, 0.14, 6.6, Y["L3"], Z + 0.48, DARK, 0.06),
+    # 4 · hasp base
+    rbox(4.0, 4.0, 0.5, 12, Y["L4"], Z - 0.05, BRONZE, 0.24, 0.06),
 ]
-for hy in (14, 0, -14):
-    leaf.append(box(2.2, 4, 0.14, 28.8, hy, FACE, BRASS, 0.05))
-    leaf += screw(28.4, hy + 1.3, FACE + 0.14) + screw(28.4, hy - 1.3, FACE + 0.14)
-
-Z = FACE
-# 1 · barrel bolt: backplate and two guides, with the knob's run clear between them
-leaf += [
-    box(12.8, 3.4, 0.4, 7.4, Y["L1"], Z, STEEL),
-    box(1.6, 1.8, 0.6, 2.3, Y["L1"], Z + 0.3, STEEL, 0.1), box(1.6, 1.8, 0.6, 12.3, Y["L1"], Z + 0.3, STEEL, 0.1),
-    sleeve(1.03, 1.4, 1.5, 3.1, Y["L1"], Z + 1.4, STEEL), sleeve(1.03, 1.4, 11.5, 13.1, Y["L1"], Z + 1.4, STEEL),
-    screw(4.2, Y["L1"] - 1.2, Z + 0.4), screw(10.4, Y["L1"] - 1.2, Z + 0.4),
-]
-# 2 · deadbolt case
-leaf += [box(11, 6, 1.9, 6.5, Y["L2"], Z, STEEL, 0.38, 3), screw(2, Y["L2"] + 2.2, Z + 1.9), screw(11, Y["L2"] - 2.2, Z + 1.9)]
-# 3 · chain track, with the slot sunk and its wide end
-leaf += [
-    box(10, 3.6, 0.9, 6.5, Y["L3"], Z, STEEL, 0.2),
-    box(7, 1.2, 0.1, 6.3, Y["L3"], Z + 0.85, DARK, 0.03), box(1.8, 2.2, 0.1, 9.4, Y["L3"], Z + 0.85, DARK, 0.03),
-    screw(2.2, Y["L3"] + 1.35, Z + 0.9), screw(11, Y["L3"] - 1.35, Z + 0.9),
-]
-# 4 · hasp base, 5 · hook base
-leaf += [box(4, 4, 0.6, 11, Y["L4"], Z, STEEL), screw(12.3, Y["L4"] + 1.4, Z + 0.6), screw(12.3, Y["L4"] - 1.4, Z + 0.6)]
-leaf += [box(2.6, 2.6, 0.6, 8, Y["L5"], Z, STEEL), screw(9, Y["L5"] + 0.9, Z + 0.6), screw(9, Y["L5"] - 0.9, Z + 0.6)]
-part("leaf", leaf, amp=0.05, cell=3.6)
+for hy in (15, 0, -15):
+    leaf.append(rbox(2.6, 3.8, 0.3, 28.0, hy, Z - 0.05, BRONZE, 0.12, 0.02))
+part("leaf", leaf, amp=0.04)
 
 # ── moving parts, each on its pivot ──────────────────────────────────────────
-BX, BY, BZ = 1, Y["L1"], Z + 1.4
+def ball(r):
+    return [(max(0.001, r * math.sin(a * math.pi / 16)), -r * math.cos(a * math.pi / 16)) for a in range(17)]
+
+BX, BY, BZ = 4, Y["L1"], BAR_Z
 part("barrel", [
-    cyl(1, 16, (BX, BY, BZ), "x", BRASS, 0.14, 40),
-    cyl(0.34, 2.0, (BX + 3, BY + 1.5, BZ), "y", BRASS, 0.04, 14, along="y"),
-    lathe([(0.34, -0.5), (0.62, -0.3), (0.72, 0), (0.62, 0.3), (0.25, 0.52)], (BX + 3, BY + 2.9, BZ), "y", BRASS, 20, along="y"),
-], (BX, BY, BZ))
+    pill(1.15, 15, (BX, BY, BZ), "x", BRASS, end=0.62, seg=44),
+    pill(0.36, 2.4, (BX - 0.2, BY + 1.7, BZ), "y", BRASS),
+    lathe(ball(0.78), (BX - 0.2, BY + 3.0, BZ), "y", BRASS, 32),
+], (BX, BY, BZ), amp=0.0)
 
-part("bolt", [box(6.5, 2, 1.2, -0.35, Y["L2"], 0.2, BRASS, 0.2, 3)], (-2, Y["L2"], 0.2))
+BOLT_Z = 1.7
+part("bolt", [rbox(7.0, 2.1, 1.0, 0.9, Y["L2"], BOLT_Z, BRASS, 0.38)], (-2, Y["L2"], BOLT_Z), amp=0.0)
 
-TX, TY, TZ = 8, Y["L2"], Z + 1.9
+TX, TY, TZ = 9.6, Y["L2"], Z + 1.85
 part("thumb", [
-    lathe([(1.5, 0), (1.5, 0.12), (1.34, 0.3), (0.9, 0.42), (0, 0.46)], (TX, TY, TZ), "z", BRASS, 40),
-    box(0.95, 3.5, 0.95, TX, TY, TZ + 0.38, BRASS, 0.3, 3, along="y"),
-], (TX, TY, TZ))
+    lathe([(1.38, 0), (1.42, 0.1), (1.32, 0.24), (1.0, 0.36), (0.001, 0.42)], (TX, TY, TZ), "z", BRASS, 44),
+    rbox(0.95, 3.2, 0.95, TX, TY, TZ + 0.2, BRASS, 0.34),
+], (TX, TY, TZ), amp=0.0)
 
-SX, SY, SZ = 2.6, Y["L3"], Z + 1.3
+SX, SY, SZ = 3.4, Y["L3"], Z + 1.15
 part("slider", [
-    cyl(0.5, 0.9, (SX, SY, SZ - 0.2), "z", STEEL, 0.03, 20),
-    lathe([(0.78, 0.2), (0.78, 0.34), (0.62, 0.5), (0, 0.56)], (SX, SY, SZ), "z", BRASS, 28),
-], (SX, SY, SZ))
+    pill(0.4, 1.0, (SX, SY, SZ - 0.45), "z", BRONZE),
+    lathe(ball(0.72), (SX, SY, SZ), "z", BRASS, 32),
+], (SX, SY, SZ), amp=0.0)
 
-AX, AY, AZ = -2, Y["L3"], 1.1
-part("anchorRing", [tube(arc(AX, AY, 0.8, 0, 2 * math.pi * 23 / 24, 23, AZ), 0.24, BRASS, closed=True)], (AX, AY, AZ))
+AX, AY, AZ = KP, Y["L3"], PLATE + 0.75
+part("anchorRing", [ring(AX, AY, AZ, 0.8, 0.22, BRASS)], (AX, AY, AZ), amp=0.0)
 
-# one chain link, in its own plane, long axis on x; the page clones it
-stadium = arc(0.42, 0, 0.33, -math.pi / 2, math.pi / 2, 7) + arc(-0.42, 0, 0.33, math.pi / 2, 3 * math.pi / 2, 7)
-part("link", [tube(stadium, 0.125, BRASS, closed=True, seg=8)], (0, 0, 0))
+# one chain link, long axis on x; the page clones it
+stadium = arc(0.3, 0, 0.3, -math.pi / 2, math.pi / 2, 8) + arc(-0.3, 0, 0.3, math.pi / 2, 3 * math.pi / 2, 8)
+part("link", [tube(stadium[:-1], 0.145, BRASS, closed=True, seg=10)], (0, 0, 0), amp=0)
 
-HX, HY, HZ = 10, Y["L4"], Z + 0.9
-hasp = carve(box(14, 4.2, 0.5, HX - 7, HY, HZ, BRASS, 0.2, 2), box(1.1, 3.1, 2, HX - 12.5, HY, HZ - 0.7, BRASS, 0.2, 2))
-finish(hasp, BRASS)
+HX, HY, HZ = 12, Y["L4"], Z + 0.5
 part("hasp", [
-    hasp,
-    cyl(0.5, 1.2, (HX, HY, HZ + 0.1), "z", STEEL, 0.05, 20),
-    lathe([(0.72, 0.5), (0.72, 0.6), (0.5, 0.78), (0, 0.84)], (HX, HY, HZ), "z", STEEL, 24),
-], (HX, HY, HZ))
+    rbox(15, 3.2, 0.55, HX - 7.2, HY, HZ, BRASS, 0.27, 0.08),
+    pill(0.8, 0.9, (HX, HY, HZ + 0.4), "z", BRONZE),
+], (HX, HY, HZ), amp=0.0)
 
-PX, PY, PZ = -2.5, Y["L4"], 1.0
-body = [box(3.4, 0.62, 1.8, PX, PY - 3.1 - 0.63 * i, PZ - 0.9, STEEL, 0.1, 2) for i in range(6)]   # laminated plates
-body += [
-    cyl(0.6, 0.2, (PX, PY - 4.7, PZ + 0.92), "z", BRASS, 0.05, 24),
-    box(0.16, 0.62, 0.06, PX, PY - 4.78, PZ + 1.0, DARK, 0.02, 1),
-    cyl(0.17, 0.06, (PX, PY - 4.55, PZ + 1.03), "z", DARK, 0.01, 12),
-]
-part("padlock", body, (PX, PY, PZ))
+PX, PY, PZ = KP, Y["L4"], 3.2
+part("padlock", [
+    rbox(4.6, 3.9, 1.7, PX, PY - 4.3, PZ - 0.85, BRASS, 0.76, 0.14),
+    pill(0.46, 0.2, (PX, PY - 4.0, PZ + 0.92), "z", DARK, seg=24),
+    rbox(0.34, 0.9, 0.14, PX, PY - 4.65, PZ + 0.84, DARK, 0.06),
+], (PX, PY, PZ), amp=0.0)
 
-SHY = PY - 1.6
-shackle = [(PX + 1.1, SHY - 1.8, PZ)] + [(PX + a, b, PZ) for a, b, _ in arc(0, SHY, 1.1, 0, math.pi, 22)] + [(PX - 1.1, SHY - 3.0, PZ)]
-part("shackle", [tube(shackle, 0.27, BRASS)], (PX, SHY, PZ))
+SHY = PY - 0.7
+shackle = [(PX + 1.25, SHY - 1.55, PZ)] + [(PX + a, SHY + b, PZ) for a, b, _ in arc(0, 0, 1.25, 0, math.pi, 26)] + [(PX - 1.25, SHY - 2.4, PZ)]
+part("shackle", [tube(shackle, 0.33, BRONZE)], (PX, SHY, PZ), amp=0.0)
 
-KX, KY, KZ = 8, Y["L5"], Z + 0.6   # low enough for the hasp to swing over it
-hook = [(KX, KY, KZ), (KX - 8.8, KY, KZ)] + [(KX - 8.8 + a, KY + b, KZ) for a, b, _ in arc(0, -0.8, 0.8, math.pi / 2, math.pi, 8)] + [(KX - 9.6, KY - 1.55, KZ)]
+KX, KY, KZ = 8, Y["L5"], Z + 0.75
+TIP = KX - KP - 0.75
+hook = [(KX - i * TIP / 18, KY, KZ) for i in range(19)] + [(KX - TIP + a, KY + b, KZ) for a, b, _ in arc(0, -0.75, 0.75, math.pi / 2, math.pi, 8)][1:]
 part("hook", [
-    tube(hook, 0.28, BRASS),
-    cyl(0.42, 1.0, (KX, KY, KZ - 0.3), "z", STEEL, 0.04, 20),
-    lathe([(0.5, 0), (0.5, 0.1), (0.38, 0.2), (0, 0.24)], (KX, KY, KZ), "z", STEEL, 24),
-], (KX, KY, KZ))
+    tube(hook, 0.38, BRASS, seg=18),
+    lathe(ball(0.38), (KX - TIP - 0.75, KY - 0.75, KZ), "y", BRASS, 18),
+    pill(1.15, 0.5, (KX, KY, KZ - 0.65), "z", BRONZE),
+    pill(0.72, 1.3, (KX, KY, KZ), "z", BRASS),
+], (KX, KY, KZ), amp=0.0)
 
 # ── out ───────────────────────────────────────────────────────────────────────
 bpy.ops.wm.save_as_mainfile(filepath=OUT_BLEND, compress=True)
 bpy.ops.export_scene.gltf(
     filepath=OUT_GLB, export_format="GLB", export_yup=True, export_apply=True,
-    export_image_format="JPEG", export_image_quality=78, export_meshopt_compression_enable=True, export_cameras=False, export_lights=False,
+    export_meshopt_compression_enable=True, export_cameras=False, export_lights=False,
     export_animations=False, export_morph=False, export_skins=False, export_tangents=False,
 )
-tris = sum(len(o.evaluated_get(bpy.context.evaluated_depsgraph_get()).data.polygons) for o in col.objects)
-print("BUILD_OK objects", len(col.objects), "polygons", tris)
-
-if OUT_PREVIEW:
-    s = bpy.context.scene
-    s.render.engine = "BLENDER_EEVEE"
-    s.render.resolution_x, s.render.resolution_y = 1100, 1000
-    s.render.filepath = OUT_PREVIEW
-    w = bpy.data.worlds.new("w"); w.use_nodes = True
-    w.node_tree.nodes["Background"].inputs[0].default_value = (0.92, 0.92, 0.9, 1)
-    w.node_tree.nodes["Background"].inputs[1].default_value = 0.9
-    s.world = w
-    sun = bpy.data.objects.new("sun", bpy.data.lights.new("sun", "SUN"))
-    sun.data.energy = 3.5; sun.rotation_euler = (math.radians(55), 0, math.radians(-25))
-    s.collection.objects.link(sun)
-    cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam"))
-    cam.data.type = "ORTHO"; cam.data.ortho_scale = 54
-    cam.location = (10, -80, 0); cam.rotation_euler = (math.pi / 2, 0, 0)
-    s.collection.objects.link(cam); s.camera = cam
-    bpy.ops.render.render(write_still=True)
-    print("PREVIEW_OK")
+dg = bpy.context.evaluated_depsgraph_get()
+tris = sum(sum(len(p.vertices) - 2 for p in o.evaluated_get(dg).data.polygons) for o in col.objects)
+print("BUILD_OK objects", len(col.objects), "tris", tris)

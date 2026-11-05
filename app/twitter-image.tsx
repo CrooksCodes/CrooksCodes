@@ -1,8 +1,9 @@
-import OpenGraphImage from "./opengraph-image";
+import { OG_ALT, OG_SIZE, renderOgCard } from "./_shared/ogCard";
 
-export const runtime = "edge";
-export const alt = "CrooksCodes · Full-Stack Developer";
-export const size = { width: 1200, height: 630 };
+export const alt = OG_ALT;
+export const size = OG_SIZE;
 export const contentType = "image/png";
 
-export default OpenGraphImage;
+export default function Image() {
+  return renderOgCard();
+}

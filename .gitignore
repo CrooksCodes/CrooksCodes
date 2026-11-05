@@ -42,3 +42,10 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 .env*
+
+# Impeccable working files (screenshots, decision payloads)
+.impeccable/review/
+.impeccable/direction-payload*.json
+
+# Blender working file, rebuilt by blender/build_door.py
+/blender/door.blend*

@@ -1,0 +1,106 @@
+/* Admin styles. Imported only by app/admin/layout.tsx, so Tailwind and these
+   tokens load on /admin pages and nowhere else. Tokens are scoped to
+   #admin-root; light and dark are both first-class. */
+@import "tailwindcss";
+
+#admin-root {
+  --bg: #f5f7f9;
+  --surface: #ffffff;
+  --surface-2: #eef1f4;
+  --border: #e2e7ec;
+  --border-strong: #cdd5dd;
+  --fg: #0f1b2a;
+  --fg-muted: #4a5a6a;
+  --fg-subtle: #6b7686;
+  --accent: #0d9488;
+  --accent-hover: #0b8177;
+  --accent-fg: #ffffff;
+  --accent-weak: #d6f2ee;
+  --paid: #047857;
+  --overdue: #be123c;
+  --due: #b45309;
+  --neutral: #64748b;
+  --ring: #0d9488;
+  --shadow: 0 1px 2px rgb(15 27 42 / 0.04), 0 1px 3px rgb(15 27 42 / 0.06);
+  color-scheme: light;
+}
+
+#admin-root[data-theme="dark"] {
+  --bg: #0b0f14;
+  --surface: #111820;
+  --surface-2: #161f29;
+  --border: #222d39;
+  --border-strong: #33414f;
+  --fg: #e6edf3;
+  --fg-muted: #9fb0c0;
+  --fg-subtle: #8494a8;
+  --accent: #14b8a6;
+  --accent-hover: #2dd4bf;
+  --accent-fg: #04141a;
+  --accent-weak: #0f2a2a;
+  --paid: #34d399;
+  --overdue: #fb7185;
+  --due: #fbbf24;
+  --neutral: #94a3b8;
+  --ring: #2dd4bf;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 1px 3px rgb(0 0 0 / 0.35);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-weak: var(--accent-weak);
+  --color-paid: var(--paid);
+  --color-overdue: var(--overdue);
+  --color-due: var(--due);
+  --color-neutral: var(--neutral);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* The portfolio's global stylesheet hides the system cursor for its custom
+   one. The admin has no custom cursor, so put the real one back. */
+body:has(> #admin-root) {
+  cursor: auto;
+  background: #0b0f14;
+}
+
+#admin-root {
+  min-height: 100dvh;
+  flex: 1;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+#admin-root * {
+  border-color: var(--border);
+}
+
+#admin-root .tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+#admin-root :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+#admin-root ::selection {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+#admin-root dialog::backdrop {
+  background: rgb(0 0 0 / 0.4);
+}

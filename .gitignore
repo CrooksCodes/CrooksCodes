@@ -42,3 +42,6 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 .env*
+
+# Written by `next dev` (Next.js 16.4+) for AI coding tools; not part of the site
+/AGENTS.md
